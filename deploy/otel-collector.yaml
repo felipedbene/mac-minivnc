@@ -50,4 +50,44 @@ spec:
       volumes:
         - name: config
           configMap:
-            name: otel-collector-config   # provided in fio B2
+            name: otel-collector-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: observability
+  labels:
+    app: otel-collector
+data:
+  config.yaml: |
+    receivers:
+      statsd:
+        endpoint: 0.0.0.0:8125
+        # MiniVNC flushes every 1s; aggregate a few flushes per scrape window.
+        aggregation_interval: 10s
+        # Keep clean metric names (no _counter/_gauge suffix); type comes from
+        # the statsd |c / |g / |ms suffix on each line.
+        enable_metric_type: false
+        # MiniVNC sends per-second counter deltas (|c); accumulate them into a
+        # monotonic cumulative counter so Grafana rate() works.
+        is_monotonic_counter: true
+        timer_histogram_mapping:
+          - statsd_type: "timing"     # minivnc.frame_ms |ms
+            observer_type: "gauge"
+
+    exporters:
+      prometheus:
+        endpoint: 0.0.0.0:8889
+        metric_expiration: 5m
+        resource_to_telemetry_conversion:
+          enabled: true
+
+    service:
+      telemetry:
+        logs:
+          level: info
+      pipelines:
+        metrics:
+          receivers: [statsd]
+          exporters: [prometheus]
