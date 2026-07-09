@@ -48,6 +48,11 @@
 #define STATSD_HOST "10.0.100.116"
 #define STATSD_PORT 8125
 
+// Plain-text log sink for dprintf output (the gopher-spot UDP log-sink;
+// read with: kubectl --context debene -n gopher-spot logs -f deploy/log-sink).
+#define LOG_HOST "10.0.100.114"
+#define LOG_PORT 5514
+
 #define DEBUG_SEGMENT_LOAD 0
 
 #if USE_CODE_PROFILER
@@ -137,6 +142,7 @@ main() {
         InitOpenTransport();
     #endif
     statsd_open(STATSD_HOST, STATSD_PORT);
+    statsd_log_open(LOG_HOST, LOG_PORT);   // dprintf -> UDP log sink
     metrics_boot_stage(1);   // fio A4: OT + statsd up
 
     #if USE_CODE_PROFILER
@@ -181,7 +187,7 @@ main() {
         }
     #else
         SetupMenuBar();
-        vncConfig.enableLogging = false;
+        vncConfig.enableLogging = true;   // debug: stream dprintf to the UDP log sink
     #endif
     metrics_boot_stage(5);   // debug: menu bar set up
 

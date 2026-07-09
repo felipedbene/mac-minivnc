@@ -48,6 +48,13 @@ int   statsd_fmt(char *buf, int cap, const char *fmt, ...);
  * clears the OT T_UDERR "one datagram only" trap and retries once. */
 void  statsd_send(const char *buf, int len);
 
+/* Register a second destination for plain-text log lines (a UDP log sink,
+ * casquinha/loglisten style). Uses the same endpoint as statsd. */
+OSErr statsd_log_open(const char *ip, unsigned short port);
+
+/* Fire one plain-text log line to the log destination (fire-and-forget). */
+void  statsd_log(const char *buf, int len);
+
 /* Close the endpoint. */
 void  statsd_close(void);
 
