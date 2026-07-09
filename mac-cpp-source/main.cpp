@@ -30,6 +30,7 @@
 #include "DebugLog.h"
 #include "DialogUtils.h"
 #include "statsd.h"
+#include "metrics.h"
 
 #include "stdlib.h"
 
@@ -234,6 +235,7 @@ main() {
             }
         }
         do_deferred_output();
+        metrics_tick();   // fio A3: batched statsd flush, self-gated to ~1 Hz
     }
 
     VNCEncodeCursor::adjustCursorVisibility(false);
