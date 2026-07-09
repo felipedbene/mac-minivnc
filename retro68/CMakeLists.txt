@@ -24,6 +24,7 @@ add_application(MiniVNC
     ${SRC}/TightVNCSupport.cpp
     ${SRC}/TightVNCTypes.c
     ${SRC}/statsd.c                # fio A1: statsd-over-OT metrics (PPC; no-op on 68k)
+    ${SRC}/metrics.c               # fio A3: 1 Hz metric accumulators + flush
 
     # --- palette / encoders ---
     ${SRC}/VNCPalette.cpp
