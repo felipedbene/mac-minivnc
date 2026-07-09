@@ -1,0 +1,75 @@
+# Minimal MiniVNC Grafana dashboard — one panel (boot stage / heartbeat / fps).
+# Auto-imported by the kube-prometheus-stack Grafana sidecar (LABEL
+# grafana_dashboard=1, NAMESPACE=ALL). Apply with the collector manifests:
+#   kubectl --context debene apply -f deploy/grafana-dashboard.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: minivnc-dashboard
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+data:
+  minivnc.json: |
+    {
+      "title": "MiniVNC",
+      "uid": "minivnc",
+      "tags": ["minivnc"],
+      "schemaVersion": 39,
+      "editable": true,
+      "time": { "from": "now-30m", "to": "now" },
+      "refresh": "10s",
+      "templating": {
+        "list": [
+          {
+            "name": "datasource",
+            "type": "datasource",
+            "query": "prometheus",
+            "label": "Data source",
+            "hide": 0,
+            "current": {}
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "MiniVNC — boot stage / heartbeat / fps",
+          "description": "boot_stage climbs 1..5 during startup; 5 = event loop reached. A launch crash stalls at the last stage. fps + heartbeat show a live session.",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+          "fieldConfig": {
+            "defaults": {
+              "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "auto" },
+              "min": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": { "displayMode": "list", "placement": "bottom" },
+            "tooltip": { "mode": "multi", "sort": "none" }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": { "type": "prometheus", "uid": "${datasource}" },
+              "expr": "minivnc_boot_stage",
+              "legendFormat": "boot stage (5 = running)"
+            },
+            {
+              "refId": "B",
+              "datasource": { "type": "prometheus", "uid": "${datasource}" },
+              "expr": "minivnc_fps",
+              "legendFormat": "fps"
+            },
+            {
+              "refId": "C",
+              "datasource": { "type": "prometheus", "uid": "${datasource}" },
+              "expr": "rate(minivnc_up_total[1m]) * 60",
+              "legendFormat": "heartbeat / min"
+            }
+          ]
+        }
+      ]
+    }
