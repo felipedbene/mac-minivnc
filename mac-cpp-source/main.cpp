@@ -183,6 +183,7 @@ main() {
         SetupMenuBar();
         vncConfig.enableLogging = false;
     #endif
+    metrics_boot_stage(5);   // debug: menu bar set up
 
     #ifdef VNC_HEADLESS_MODE
         if(RunningAtStartup()) {
@@ -192,10 +193,11 @@ main() {
     #else
         vncConfig.autoRestart = 0;
     #endif
+    metrics_boot_stage(6);   // debug: headless auto-start check done
 
     UpdateMenuState();
 
-    metrics_boot_stage(5);   // fio A4: entering event loop
+    metrics_boot_stage(7);   // fio A4: menu state updated / entering event loop
 
     /* Run the event loop */
     while (!gCancel || !vncServerStopped()) {
@@ -833,7 +835,7 @@ int ShowAlert(unsigned long type, short id, ConstStr255Param pStr) {
             if (err != noErr) return false;
 
             return startupVRefNum == parentVRefNum &&
-                   startupDirID   == startupDirID;
+                   startupDirID   == parentDirID;   // was: startupDirID == startupDirID (self-compare bug)
         }
         return false;
     }
