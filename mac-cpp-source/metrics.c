@@ -32,7 +32,19 @@ static unsigned long g_frames       = 0;   /* -> fps gauge               */
 static unsigned long g_frame_ms_sum = 0;   /* -> avg frame_ms            */
 static unsigned long g_frame_ms_cnt = 0;
 
-void metrics_boot_stage(int stage)  { g_boot_stage = stage; }
+/* Boot stages are sent IMMEDIATELY (not just accumulated): the 1 Hz flush only
+ * runs once the event loop is reached, so a crash during startup would transmit
+ * nothing. Sending per-stage means the highest boot_stage the collector sees
+ * pinpoints the last step before a launch crash. Called from main() startup
+ * (main-loop time), so a direct statsd_send is safe. */
+void metrics_boot_stage(int stage) {
+    char buf[48];
+    int n;
+    g_boot_stage = stage;
+    n = statsd_fmt(buf, (int)sizeof(buf), "minivnc.boot_stage:%d|g", stage);
+    statsd_send(buf, n);
+}
+
 void metrics_session(void)          { g_sessions++; }
 void metrics_bytes(unsigned long n) { g_bytes += n; }
 void metrics_frame(unsigned long ms){ g_frames++; g_frame_ms_sum += ms; g_frame_ms_cnt++; }
