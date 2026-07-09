@@ -29,8 +29,23 @@
 #include "GestaltUtils.h"
 #include "DebugLog.h"
 #include "DialogUtils.h"
+#include "statsd.h"
 
 #include "stdlib.h"
+
+// fio A2: Open Transport backs the statsd metrics emitter (statsd.h) only —
+// MiniVNC is otherwise a MacTCP app. OT exists on the PowerPC/CFM build; guard so
+// the 68k build (which links no OT libs) doesn't reference OT symbols.
+#if defined(__ppc__) || defined(__POWERPC__) || defined(powerc)
+    #include <OpenTransport.h>
+    #define MINIVNC_HAS_OT 1
+#else
+    #define MINIVNC_HAS_OT 0
+#endif
+
+// statsd collector target — must match the MetalLB VIP provisioned in Track B.
+#define STATSD_HOST "10.0.100.116"
+#define STATSD_PORT 8125
 
 #define DEBUG_SEGMENT_LOAD 0
 
@@ -114,6 +129,13 @@ main() {
     TEInit();
     InitDialogs(nil);
     InitCursor();
+
+    // fio A2: bring up Open Transport + the statsd metrics emitter. statsd_open
+    // is a no-op on non-OT targets, so this is safe to call unconditionally.
+    #if MINIVNC_HAS_OT
+        InitOpenTransport();
+    #endif
+    statsd_open(STATSD_HOST, STATSD_PORT);
 
     #if USE_CODE_PROFILER
         if (ProfilerInit(collectDetailed, bestTimeBase, 9000, 15)) {
@@ -234,6 +256,12 @@ main() {
     #ifndef VNC_HEADLESS_MODE
         Alert(129, NULL); // Sponsorship dialog box
     #endif
+
+    // fio A2: tear down the statsd emitter + Open Transport on quit.
+    statsd_close();
+    #if MINIVNC_HAS_OT
+        CloseOpenTransport();
+    #endif
     return 0;
 }
 
@@ -313,7 +341,7 @@ void CheckServerState() {
                     GetItemMark (segMenu, i, &oldMark);
                     CheckItem (segMenu,   i, !isFree);
                     if (isPurgeable) {
-                        SetItemMark (segMenu, i,'�');
+                        SetItemMark (segMenu, i,'�');
                     }
                     GetItemMark (segMenu, i, &newMark);
                     if (oldMark != newMark) {
@@ -741,15 +769,21 @@ ControlHandle FindCHndl(DialogPtr dlg, int item, short *type) {
     return hCntl;
 }
 
-void ShowStatus(Str255 pStr) {
-    SetDText(gDialog, iStatus, pStr);
+void ShowStatus(ConstStr255Param pStr) {
+    // Original used CodeWarrior's SetDText(dlg,item,text) helper, which does not
+    // exist in the universal headers. Equivalent standard Toolbox sequence:
+    short type;
+    Handle item;
+    Rect box;
+    GetDItem(gDialog, iStatus, &type, &item, &box);
+    SetIText(item, pStr);
 }
 
-void SetDialogTitle(Str255 pStr) {
+void SetDialogTitle(ConstStr255Param pStr) {
     SetWTitle(gDialog, pStr);
 }
 
-int ShowAlert(unsigned long type, short id, Str255 pStr) {
+int ShowAlert(unsigned long type, short id, ConstStr255Param pStr) {
     ParamText(pStr, "\p", "\p", "\p");
     switch(type) {
         case 'ERR': return StopAlert(id, NULL);
