@@ -33,5 +33,5 @@ Boolean VNCEncodeRaw::getChunk(EncoderPB &epb) {
     const unsigned char *src = VNCFrameBuffer::getPixelAddr(fbUpdateRect.x, fbUpdateRect.y + line);
     BlockMove(src, epb.dst, fbUpdateRect.w);
     epb.bytesWritten = fbUpdateRect.w;
-    return ++line < h;
+    return ++line < fbUpdateRect.h;
 }

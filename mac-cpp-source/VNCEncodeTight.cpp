@@ -26,6 +26,8 @@
 #define src16 ((unsigned short*)src)
 #define dst16 ((unsigned short*)dst)
 #define src32 ((unsigned long*)src)
+// GCC rejects post-increment on a cast expression (CodeWarrior allowed it).
+#define POSTINC(p,T) (*(T*)(((p) += sizeof(T)) - sizeof(T)))
 
 extern int tile_x, tile_y;
 
@@ -79,7 +81,7 @@ restartRow:
     src = row_src;
 
     for(;;) {
-        colors = *src32++;
+        colors = POSTINC(src,unsigned long);
 
         unsigned char n = numPix - 1;
         do {

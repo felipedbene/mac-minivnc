@@ -56,7 +56,7 @@ size_t StreamReader::copyTo(void *dst, size_t len) {
         const size_t bytesToCopy = min(len - bytesCopied, rdsLeft);
         if (dst) {
             BlockMove(src, dst, bytesToCopy);
-            (Ptr)dst += bytesToCopy;
+            dst = (Ptr)dst + bytesToCopy;
         }
         src         += bytesToCopy;
         bytesCopied += bytesToCopy;

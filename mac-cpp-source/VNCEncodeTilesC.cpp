@@ -17,6 +17,7 @@
 
 #include "VNCFrameBuffer.h"
 #include "VNCEncodeTiles.h"
+#include "DebugLog.h"
 
 #if !USE_ASM_CODE
 
@@ -25,6 +26,9 @@
 #define src16 ((unsigned short*)src)
 #define dst16 ((unsigned short*)dst)
 #define src32 ((unsigned long*)src)
+// GCC rejects post-increment on a cast expression (CodeWarrior allowed it).
+// POSTINC reads/writes *(T*)p as an lvalue then advances byte pointer p by sizeof(T).
+#define POSTINC(p,T) (*(T*)(((p) += sizeof(T)) - sizeof(T)))
 
 /**
  * With "src" pointing to the first byte of a tile on the screen, this function will copy the data
@@ -61,7 +65,7 @@ unsigned short screenToNative(const unsigned char *src, unsigned char *dst, shor
         char wordsLeftInRow = wordsInRow - 1;
         const unsigned short stride = fbStride - wordsInRow * sizeof(unsigned short);
         do {
-            *dst16++ = *src16++;
+            POSTINC(dst,unsigned short) = POSTINC(src,unsigned short);
             if (--wordsLeftInRow == -1) {
                 src += stride;
                 wordsLeftInRow = wordsInRow - 1;
@@ -79,13 +83,13 @@ unsigned short screenToNative(const unsigned char *src, unsigned char *dst, shor
         if((dst - src) % sizeof(unsigned long)) {
             // Add padding
             *dst16 = *(dst16-1);
-            dst16++;
+            dst += sizeof(unsigned short);
         }
         unsigned long colors, lastColors = ~*src32;
         const unsigned char oneLessNumPix = sizeof(colors) * 8 / fbDepth - 1;
         const unsigned long rmask = (1 << fbDepth) - 1; // Mask for rightmost color in block
         do {
-            unsigned long colors = *src32++;
+            unsigned long colors = POSTINC(src,unsigned long);
             if(colors != lastColors) {
                 lastColors = colors;
                 // XOR the word with itself to see whether all colors are equal
@@ -161,10 +165,10 @@ unsigned short nativeToColors(const unsigned char *src, unsigned char *end, Colo
     if((end - src) % sizeof(unsigned long)) {
         // Add padding
         *end16 = *(end16-1);
-        end16++;
+        end += sizeof(unsigned short);
     }
     do {
-        unsigned long colors = *src32++;
+        unsigned long colors = POSTINC(src,unsigned long);
         char n = oneLessNumPix;
         do {
             // Rotate the left-most color from the most
@@ -229,6 +233,11 @@ unsigned short nativeToRle(const unsigned char *src, unsigned char *end, unsigne
     const unsigned char npix = 32 / depth;
     const unsigned char rsft = 32 - depth;
     const unsigned long lmask = ((unsigned long)-1) << rsft; // Mask for leftmost color in block
+    const unsigned long rmask = (1UL << depth) - 1; // Mask for rightmost color in block
+    // FIXME: this C twin of the asm RLE encoder was never built under CodeWarrior
+    // (USE_ASM_CODE was always 1). `rmask` was undefined here. Defined to match the
+    // sibling functions, but the carry computation below (`curr & rmask`) needs
+    // validation against VNCEncodeTilesASM.cpp before trusting color RLE output.
     unsigned long curr = *src32, test, tmp;
     unsigned long carry = curr & lmask;
     unsigned short rleCnt = -1, rleVal = curr >> rsft, rleSiz = cInfo->colorSize;
@@ -242,7 +251,7 @@ unsigned short nativeToRle(const unsigned char *src, unsigned char *end, unsigne
         *end++ = 0;
         *end++ = 0;
     } else if(gotPadding) {
-        printf("Unexpected padding value in RLE from native! %d\n", gotPadding);
+        dprintf("Unexpected padding value in RLE from native! %d\n", gotPadding);
         return 0;
     }
 
@@ -256,7 +265,7 @@ unsigned short nativeToRle(const unsigned char *src, unsigned char *end, unsigne
 
     Boolean done = false;
     for(;;) {
-        curr = *src32++;
+        curr = POSTINC(src,unsigned long);
         if(src > end) {
             goto writeLastRle;
         }
@@ -307,6 +316,7 @@ writeLastRle:
         }
     }
 writeRle:
+    { // scope so `color`'s init isn't crossed by the goto skipLastRLEPair above (C++)
     /*** Write RLE Pair ***/
     const unsigned char color = mapColors ? cInfo->colorMap[rleVal] : rleVal;
     if((rleCnt == 0) && cInfo->packRuns) {
@@ -324,6 +334,7 @@ writeRle:
     /***********************/
     if(!done && (dst <= stop))
         goto rleWriteReturn;
+    } // end writeRle scope
 
 skipLastRLEPair:
     cInfo->runsOfOne  = runsOfOne;
@@ -358,10 +369,10 @@ unsigned short nativeToPacked(const unsigned char *src, unsigned char *dst, cons
         if (inLeft == 0) {
             if (src >= end)
                 break;
-            inBits = *src32++;
+            inBits = POSTINC(src,unsigned long);
             inLeft = sizeof(unsigned long) * 8;
             if (outLeft == 0) {
-                *dst32++ = outBits;
+                POSTINC(dst,unsigned long) = outBits;
                 outBits = 0;
                 outLeft = sizeof(unsigned long) * 8;
             }
@@ -373,7 +384,7 @@ unsigned short nativeToPacked(const unsigned char *src, unsigned char *dst, cons
         outBits |= (unsigned long)mapped << outLeft;
     }
     // Write the remaining bits
-    *dst32++ = outBits;
+    POSTINC(dst,unsigned long) = outBits;
 
     return (end - start) * outDepth / inDepth;
 }

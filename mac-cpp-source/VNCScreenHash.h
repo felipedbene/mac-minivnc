@@ -22,12 +22,21 @@
 
 #define requestAlreadyScheduled -999
 
+// GCC's m68k backend ICEs on the `pascal` attribute applied to a static member
+// function. Our A5-trampoline (preVBLTask) is hand-written asm under GCC and pops
+// the callee's argument itself, so the VBL member can safely use C convention there.
+#if defined(__GNUC__)
+    #define VBL_PASCAL
+#else
+    #define VBL_PASCAL pascal
+#endif
+
 typedef pascal void (*HashCallbackPtr)(int x, int y, int w, int h);
 
 class VNCScreenHash {
     private:
-        static pascal void myVBLTask(VBLTaskPtr theVBL);
-        static asm pascal void preVBLTask();
+        static VBL_PASCAL void myVBLTask(VBLTaskPtr theVBL);
+        static VBL_PASCAL void preVBLTask();
         static OSErr makeVBLTaskPersistent(VBLTaskPtr task);
         static OSErr disposePersistentVBLTask(VBLTaskPtr task);
 

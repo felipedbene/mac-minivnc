@@ -27,6 +27,9 @@
 #define DEBUG_SUBRECTS     0
 
 #define src32 ((unsigned long*)src)
+// GCC rejects post-increment on a cast expression (CodeWarrior allowed it).
+// POSTINC reads/writes *(T*)p then advances the byte pointer p by sizeof(T).
+#define POSTINC(p,T) (*(T*)(((p) += sizeof(T)) - sizeof(T)))
 
 unsigned int lastBg, lastFg;
 
@@ -262,7 +265,7 @@ void VNCEncodeHextile::begin() {
                     unsigned short pixels = epb.rows * epb.cols;
                     do {
                         if(bitsLeft == 0) {
-                            packed = *src32++;
+                            packed = POSTINC(src,unsigned long);
                             bitsLeft = 32;
                         }
                         emitColor(dst, (packed & lmask) >> rsft);

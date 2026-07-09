@@ -20,7 +20,7 @@
 #include "MacTCP.h"
 #include "VNCEncoder.h"
 
-asm Boolean getChunkMonochrome(int x, int y, int w, int h, wdsEntry *wdsPtr);
+Boolean getChunkMonochrome(int x, int y, int w, int h, wdsEntry *wdsPtr);
 
 class VNCEncodeTRLE {
     public:

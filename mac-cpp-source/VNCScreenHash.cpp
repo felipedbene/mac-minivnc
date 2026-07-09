@@ -31,11 +31,18 @@
 
 //#define TEST_HASH
 
-typedef pascal void (*VBLProcPtr)(VBLTaskPtr recPtr);
+// Named VNCVBLProc (not VBLProcPtr) to avoid colliding with Retrace.h, which
+// defines VBLProcPtr as a register-based UPP. This is the stack-based `pascal`
+// routine our A5-trampoline (preVBLTask) invokes.
+typedef VBL_PASCAL void (*VNCVBLProc)(VBLTaskPtr recPtr);
+
+#if defined(__GNUC__) && !defined(__ppc__)
+extern "C" void preVBLTaskAsm(); // 68k A5-trampoline, defined in top-level asm below
+#endif
 
 struct ExtendedVBLTaskRec {
     unsigned long ourA5; // Application A5
-    VBLProcPtr ourProc;  // Address of VBL routine written in a high-level language
+    VNCVBLProc ourProc;  // Address of VBL routine written in a high-level language
     VBLTask    vblTask;  // VBLTask record
 } evbl;
 
@@ -86,7 +93,15 @@ OSErr VNCScreenHash::setup() {
     evbl.ourA5 = SetCurrentA5();
     evbl.ourProc = myVBLTask;
     evbl.vblTask.qType = vType;
+#if defined(__ppc__)
+    // PowerPC: no A5 trampoline — wrap the VBL routine in a UPP; the Mixed Mode
+    // Manager restores the app's RTOC when the OS fires the task.
+    evbl.vblTask.vblAddr = NewVBLUPP(myVBLTask);
+#elif defined(__GNUC__)
+    evbl.vblTask.vblAddr = (VBLUPP)preVBLTaskAsm;
+#else
     evbl.vblTask.vblAddr = preVBLTask;
+#endif
     evbl.vblTask.vblCount = 0;
     evbl.vblTask.vblPhase = 0;
 
@@ -160,6 +175,31 @@ OSErr VNCScreenHash::disposePersistentVBLTask(VBLTaskPtr task) {
     return MemError();
 }
 
+#if defined(__ppc__)
+// PowerPC: the VBL routine is wrapped in a UPP (NewVBLUPP) at install time and the
+// Mixed Mode Manager handles the environment, so no A5-trampoline is emitted here.
+#elif defined(__GNUC__)
+// Retro68/GCC translation of the CodeWarrior A5-trampoline below, emitted as
+// top-level asm so GCC adds no prologue/epilogue. The OS enters with A0 = &vblTask;
+// the app's A5 sits at -8(A0) and the real routine (ourProc) at -4(A0). The real
+// routine is C-convention under GCC, so the trampoline caller-pops the arg (addq).
+extern "C" void preVBLTaskAsm();
+__asm__(
+"    .text\n"
+"    .globl preVBLTaskAsm\n"
+"preVBLTaskAsm:\n"
+"    link %a6,#0\n"
+"    movem.l %a5,-(%sp)\n"
+"    move.l %a0,-(%sp)\n"
+"    move.l -8(%a0),%a5\n"
+"    move.l -4(%a0),%a0\n"
+"    jsr (%a0)\n"
+"    addq.l #4,%sp\n"          // caller-pops: myVBLTask is C-convention under GCC
+"    movem.l (%sp)+,%a5\n"
+"    unlk %a6\n"
+"    rts\n"
+);
+#else
 asm pascal void VNCScreenHash::preVBLTask() {
     link    a6,#0                // Link for the debugger
     movem.l a5,-(sp)             // Preserve the A5 register
@@ -173,6 +213,7 @@ asm pascal void VNCScreenHash::preVBLTask() {
     dc.b    0x8A,"PreVBLTask"
     dc.w    0x0000
 }
+#endif // __GNUC__
 
 OSErr VNCScreenHash::requestDirtyRect(HashCallbackPtr func) {
     if(callback == NULL) {
@@ -187,7 +228,7 @@ OSErr VNCScreenHash::requestDirtyRect(HashCallbackPtr func) {
     return requestAlreadyScheduled;
 }
 
-pascal void VNCScreenHash::myVBLTask(VBLTaskPtr theVBL) {
+VBL_PASCAL void VNCScreenHash::myVBLTask(VBLTaskPtr theVBL) {
     #if defined(TEST_HASH)
         if(1) {
             beginCompute();
@@ -218,7 +259,11 @@ pascal void VNCScreenHash::myVBLTask(VBLTaskPtr theVBL) {
         else  {
             endCompute();
             VNCRect newDirt;
-            computeDirty(newDirt.x, newDirt.y, newDirt.w, newDirt.h);
+            // computeDirty takes int& but VNCRect fields are unsigned short; bridge
+            // through int temporaries (CodeWarrior bound the mismatched refs directly).
+            int ndx, ndy, ndw, ndh;
+            computeDirty(ndx, ndy, ndw, ndh);
+            newDirt.x = ndx; newDirt.y = ndy; newDirt.w = ndw; newDirt.h = ndh;
 
             Boolean gotOldDirt = dirtyRect.w && dirtyRect.h;
             Boolean gotNewDirt = newDirt.w && newDirt.h;
@@ -351,6 +396,11 @@ void VNCScreenHash::computeHashes(unsigned int rows) {
  * words, which is estimated to reduce total memory access by 25%. This
  * is done by using movem.l to read either 20 and 24 bytes at a time.
  */
+#if defined(__GNUC__)
+// Retro68/GCC: use the portable C computeHashes() in place of the asm
+// optimization — identical semantics (row + column hashes, advances the globals).
+void VNCScreenHash::computeHashesFast(unsigned int rows) { computeHashes(rows); }
+#else
 asm void VNCScreenHash::computeHashesFast(unsigned int rows) {
     /*
      * Register Assignments:
@@ -488,7 +538,13 @@ noRows:
     unlk    a6
     rts                        // Return
 }
+#endif // __GNUC__ (computeHashesFast)
 
+#if defined(__GNUC__)
+// Only referenced by the TEST_HASH diagnostic path; computeHashes() already
+// covers column hashes. Stubbed for the Retro68 build (TODO if TEST_HASH needed).
+void VNCScreenHash::computeHashesFastest(unsigned int column) { (void)column; }
+#else
 asm void VNCScreenHash::computeHashesFastest(unsigned int column) {
     /*
      * Register Assignments:
@@ -568,3 +624,4 @@ nextRow:
     unlk    a6
     rts                        // Return
 }
+#endif // __GNUC__ (computeHashesFastest)
