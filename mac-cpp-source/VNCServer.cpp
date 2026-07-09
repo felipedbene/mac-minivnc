@@ -31,6 +31,7 @@
 #include "VNCStreamReader.h"
 #include "ChainedTCPHelper.h"
 #include "DebugLog.h"
+#include "metrics.h"
 
 #if USE_TIGHT_AUTH
     #include "TightVNCSupport.h"
@@ -44,7 +45,13 @@
 #define kBufSize     16384   /* Size for TCP stream buffer and receive buffer */
 #define kReadTimeout 10
 
+#if defined(__ppc__)
+static void PreCompletion(TCPiopb *pb);            // PPC: plain C dispatcher (wrapped in a UPP)
+#elif defined(__GNUC__)
+extern "C" void preCompletionAsm(); // A5-trampoline, defined in top-level asm below
+#else
 static asm void PreCompletion(TCPiopb *pb);
+#endif
 
 pascal void tcpStreamCreated(TCPiopb *pb);
 pascal void tcpStreamClosed(TCPiopb *pb);
@@ -127,9 +134,8 @@ wdsEntry           myWDS[3];
 rdsEntry           myRDS[kNumRDS + 1];
 
 VNCRect            fbUpdateRect;
-#if LOG_COMPRESSION_STATS
-    unsigned long      fbUpdateStartTicks;
-#endif
+// Always defined (fio A4 uses it for minivnc.frame_ms; LOG_COMPRESSION_STATS also uses it).
+unsigned long      fbUpdateStartTicks;
 
 VNCState vncState = VNC_STOPPED;
 VNCFlags vncFlags = VNC_FLAGS_DEFAULTS;
@@ -177,7 +183,13 @@ OSErr vncServerStart() {
     if (vncError != noErr) return vncError;
 
     epb_recv.ourA5 = SetCurrentA5();
+#if defined(__ppc__)
+    epb_recv.pb.ioCompletion = NewTCPIOCompletionUPP(PreCompletion);
+#elif defined(__GNUC__)
+    epb_recv.pb.ioCompletion = (ProcPtr)preCompletionAsm;
+#else
     epb_recv.pb.ioCompletion = PreCompletion;
+#endif
 
     recvBuffer = NewPtr(kBufSize);
     vncError = MemError();
@@ -456,6 +468,7 @@ pascal void tcpWaitForClientInit(TCPiopb *pb) {
 }
 
 pascal void tcpSendServerInit(TCPiopb *pb) {
+    metrics_session();   // fio A4: a client cleared handshake+auth -> one session
     // The macOS Screen Sharing client in High Sierra always breaks the connection
     // here and immediately tries to reconnect.
     OSErr err = tcp.getResult(pb);
@@ -574,6 +587,7 @@ DispatchMsgResult dispatchClientMessage(MessageData *pb) {
             break;
    #endif // USE_TURBO_FEATURES
         case mSetEncodings:
+        { // brace-scope so `gotMore` below isn't crossed by later case labels (C++)
             MUST_COPY();
             READ_ALL(setEncoding);
             vncClientMessage.setEncoding.numberOfEncodings--;
@@ -597,6 +611,7 @@ DispatchMsgResult dispatchClientMessage(MessageData *pb) {
             }
     #endif // USE_TURBO_FEATURES
             break;
+        }
     #if USE_TIGHT_AUTH
         case mTightVNCExt:
             if (vncConfig.allowTightAuth) {
@@ -1002,9 +1017,7 @@ void vncSendFBUpdate(Boolean incremental) {
 }
 
 pascal void vncPrepareForFBUpdate() {
-    #if LOG_COMPRESSION_STATS
-        fbUpdateStartTicks = TickCount();
-    #endif
+    fbUpdateStartTicks = TickCount();   // frame start (fio A4 metrics + LOG_COMPRESSION_STATS)
     vncFlags.fbUpdateInProgress = true;
     vncFlags.fbUpdatePending = false;
 
@@ -1161,6 +1174,8 @@ pascal void vncFinishFBUpdate(TCPiopb *pb) {
         const float elapsedTime = TickCount() - fbUpdateStartTicks;
         dprintf("Update done in %.1f s\n", elapsedTime / 60);
     #endif
+    // fio A4: one frame done -> feeds minivnc.fps and minivnc.frame_ms (accumulate only).
+    metrics_frame((TickCount() - fbUpdateStartTicks) * 1000UL / 60UL);
     vncFlags.fbUpdateInProgress = false;
     if(vncFlags.fbUpdatePending) {
         vncSendFBUpdate(true);
@@ -1192,6 +1207,35 @@ pascal void vncFinishFBUpdate(TCPiopb *pb) {
 
 // PreCompletion routine as described in "Asyncronous Routines on the Macintosh", Develop magazine, March 1993
 
+#if defined(__ppc__)
+// PowerPC: no A5 trampoline needed. When the OS calls this routine through its
+// UPP, the Mixed Mode Manager restores the app's RTOC, so globals are valid and
+// we can dispatch straight to the chained ourCompletion.
+static void PreCompletion(TCPiopb *pb) {
+    ExtendedTCPiopb *epb = (ExtendedTCPiopb *)((char*)pb - 8);
+    if (epb->ourCompletion) epb->ourCompletion(pb);
+}
+#elif defined(__GNUC__)
+// Retro68/GCC translation of the CodeWarrior A5-trampoline below, as top-level
+// asm (no compiler prologue). The OS enters with A0 = param block; the app's A5
+// is at -8(A0) and the real completion routine at -4(A0). Completion routines are
+// `pascal` free functions (callee-pops under Retro68), so no post-jsr stack adjust.
+extern "C" void preCompletionAsm();
+__asm__(
+"    .text\n"
+"    .globl preCompletionAsm\n"
+"preCompletionAsm:\n"
+"    link %a6,#0\n"
+"    movem.l %a5,-(%sp)\n"
+"    move.l %a0,-(%sp)\n"
+"    move.l -8(%a0),%a5\n"
+"    move.l -4(%a0),%a0\n"
+"    jsr (%a0)\n"
+"    movem.l (%sp)+,%a5\n"
+"    unlk %a6\n"
+"    rts\n"
+);
+#else
 static asm void PreCompletion(TCPiopb *pb) {
     link    a6,#0                // Link for the debugger
     movem.l a5,-(sp)             // Preserve the A5 register
@@ -1205,3 +1249,4 @@ static asm void PreCompletion(TCPiopb *pb) {
     dc.b    0x8D,"PreCompletion"
     dc.w    0x0000
 }
+#endif // __GNUC__

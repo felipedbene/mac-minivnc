@@ -137,6 +137,7 @@ main() {
         InitOpenTransport();
     #endif
     statsd_open(STATSD_HOST, STATSD_PORT);
+    metrics_boot_stage(1);   // fio A4: OT + statsd up
 
     #if USE_CODE_PROFILER
         if (ProfilerInit(collectDetailed, bestTimeBase, 9000, 15)) {
@@ -149,10 +150,12 @@ main() {
     if (!VNCFrameBuffer::checkScreenResolution()) {
         ExitToShell();
     }
+    metrics_boot_stage(2);   // fio A4: screen resolution OK
 
     /* Load the user interface */
     gDialog =  GetNewDialog(128, NULL, (WindowPtr) -1);
     gOptions = GetNewDialog(131, NULL, (WindowPtr) -1);
+    metrics_boot_stage(3);   // fio A4: dialogs loaded
 
     ShowStatus("\pClick \"Start Server\" to begin.");
 
@@ -160,6 +163,7 @@ main() {
      * crash the Mac Plus */
 
     LoadPreferences();
+    metrics_boot_stage(4);   // fio A4: preferences loaded
 
     if (!HasColorQD()) {
         vncConfig.allowRaw = false;
@@ -190,6 +194,8 @@ main() {
     #endif
 
     UpdateMenuState();
+
+    metrics_boot_stage(5);   // fio A4: entering event loop
 
     /* Run the event loop */
     while (!gCancel || !vncServerStopped()) {

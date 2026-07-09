@@ -16,6 +16,7 @@
  ****************************************************************************/
 
 #include "ChainedTCPHelper.h"
+#include "metrics.h"
 
 /* Opens the TCP driver and allocates a parameter block for
  * subsequent calls.
@@ -45,7 +46,12 @@ void ChainedTCPHelper::createStream(TCPiopb *pBlock, Ptr recvPtr, unsigned short
     pBlock->ioResult = 1;
     pBlock->csParam.create.rcvBuff = recvPtr;
     pBlock->csParam.create.rcvBuffLen = recvLen;
+#if defined(__ppc__)
+    // PowerPC: TCP callbacks are RoutineDescriptor UPPs, not raw ProcPtrs.
+    pBlock->csParam.create.notifyProc = notifyProc ? NewTCPNotifyUPP(notifyProc) : NULL;
+#else
     pBlock->csParam.create.notifyProc = notifyProc;
+#endif
     PBControl((ParmBlkPtr)pBlock,true);
 }
 
@@ -140,6 +146,12 @@ void ChainedTCPHelper::release(TCPiopb *pBlock, StreamPtr streamPtr) {
 }
 
 void ChainedTCPHelper::send(TCPiopb *pBlock, StreamPtr streamPtr, wdsEntry data[], Byte timeout, Boolean push, Boolean urgent) {
+    // fio A4: count all outbound bytes (handshake + framebuffer). Cheap long add;
+    // safe at interrupt time. Feeds minivnc.bytes, flushed at 1 Hz.
+    unsigned long _sent = 0;
+    for (wdsEntry *e = data; e->length; e++) _sent += e->length;
+    metrics_bytes(_sent);
+
     pBlock->csCode = TCPSend;
     pBlock->ioResult = 1;
     pBlock->tcpStream = streamPtr;
