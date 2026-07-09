@@ -151,6 +151,14 @@ void unionRect(const VNCRect *a,VNCRect *b) {
 
 // From Inside Macintosh: Process page 4-20, Using the Vertical Retrace Manager
 OSErr VNCScreenHash::makeVBLTaskPersistent(VBLTaskPtr task) {
+#if defined(__ppc__)
+    // PowerPC: vblAddr is already a NewVBLUPP RoutineDescriptor and CFM code is
+    // stable while the app runs, so no persistence stub is needed. The 68k JMP
+    // trampoline below would make the Vertical Retrace Manager execute the
+    // RoutineDescriptor as 68k code on the first retrace -> type 10 crash.
+    (void)task;
+    return noErr;
+#else
     struct JMPInstr {
         unsigned short  opcode;
         void            *address;
@@ -167,12 +175,20 @@ OSErr VNCScreenHash::makeVBLTaskPersistent(VBLTaskPtr task) {
 
     task->vblAddr = (VBLUPP) sysHeapPtr;
     return noErr;
+#endif
 }
 
 OSErr VNCScreenHash::disposePersistentVBLTask(VBLTaskPtr task) {
+#if defined(__ppc__)
+    // On PPC vblAddr is the NewVBLUPP RoutineDescriptor (no 68k stub was made).
+    if (task->vblAddr) DisposeVBLUPP((VBLUPP)task->vblAddr);
+    task->vblAddr = 0;
+    return noErr;
+#else
     DisposPtr((Ptr)task->vblAddr);
     task->vblAddr = 0;
     return MemError();
+#endif
 }
 
 #if defined(__ppc__)
