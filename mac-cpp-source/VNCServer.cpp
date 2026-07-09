@@ -169,16 +169,19 @@ VNCFlags vncFlags = VNC_FLAGS_DEFAULTS;
 OSErr vncServerStart() {
     metrics_boot_stage(10);   // debug: server start entry
     VNCKeyboard::Setup();
+    metrics_boot_stage(11);   // debug: keyboard setup done
 
     vncError = VNCFrameBuffer::setup();
     if (vncError != noErr) return vncError;
+    metrics_boot_stage(12);   // debug: framebuffer setup done
 
     vncError = VNCEncoder::setup();
     if (vncError != noErr) return vncError;
+    metrics_boot_stage(13);   // debug: encoder setup done
 
     vncError = VNCScreenHash::setup();
     if (vncError != noErr) return vncError;
-    metrics_boot_stage(11);   // debug: screen hash + VBL task installed
+    metrics_boot_stage(14);   // debug: screen hash + VBL task installed
 
     dprintf("Opening network driver\n");
     vncError = tcp.begin(&epb_recv.pb);
@@ -212,7 +215,7 @@ OSErr vncServerStart() {
     // Set the forceVNCAuth to the default
     vncFlags.forceVNCAuth = vncConfig.forceVNCAuth;
 
-    metrics_boot_stage(12);   // debug: vncServerStart complete (stream create pending)
+    metrics_boot_stage(15);   // debug: vncServerStart complete (stream create pending)
     return noErr;
 }
 
