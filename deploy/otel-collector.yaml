@@ -29,7 +29,10 @@ spec:
       containers:
         - name: otel-collector
           # contrib image — the statsd receiver is a contrib-only component.
-          image: otel/opentelemetry-collector-contrib:0.116.0
+          # NB: pin a STATICALLY-linked release. 0.116.0 shipped a dynamically-
+          # linked binary on the loader-less distroless base ("exec: no such file
+          # or directory"); 0.117.0 (and its neighbors) are static.
+          image: otel/opentelemetry-collector-contrib:0.117.0
           args: ["--config=/etc/otel/config.yaml"]
           ports:
             - name: statsd
