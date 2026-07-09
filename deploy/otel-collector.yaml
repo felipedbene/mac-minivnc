@@ -1,0 +1,53 @@
+# MiniVNC statsd → OpenTelemetry Collector (debene cluster)
+#
+# Receives statsd/UDP metrics from MiniVNC on the PowerPC Mac (fio A1-A4) and
+# exposes them for the existing kube-prometheus-stack to scrape. Ingress is a
+# dedicated MetalLB VIP (10.0.100.116:8125/UDP); the collector→Prometheus side is
+# a Prometheus /metrics endpoint scraped via a ServiceMonitor (fio B3).
+#
+# Apply with:  kubectl --context debene apply -f deploy/otel-collector.yaml
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: observability
+  labels:
+    app: otel-collector
+    app.kubernetes.io/name: otel-collector
+    app.kubernetes.io/part-of: minivnc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+    spec:
+      containers:
+        - name: otel-collector
+          # contrib image — the statsd receiver is a contrib-only component.
+          image: otel/opentelemetry-collector-contrib:0.116.0
+          args: ["--config=/etc/otel/config.yaml"]
+          ports:
+            - name: statsd
+              containerPort: 8125
+              protocol: UDP
+            - name: metrics          # Prometheus exposition (scraped in fio B3)
+              containerPort: 8889
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otel
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+      volumes:
+        - name: config
+          configMap:
+            name: otel-collector-config   # provided in fio B2
