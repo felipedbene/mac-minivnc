@@ -40,10 +40,15 @@ void _dprintf(const char* format, ...) {
 }
 
 #if !USE_STDOUT
-// Log sink for the Retro68 build (no SIOUX console). Default: discard. This is
-// the single seam to redirect debug output to — e.g. a UDP mirror (loglisten.py,
-// casquinha-style) once Open Transport / MacTCP is up.
-void logSink(const char *str) { (void)str; }
+#include "statsd.h"
+// Log sink for the Retro68 build (no SIOUX console): ship each dprintf line to
+// the UDP log sink over Open Transport (casquinha-style). Called from
+// _do_deferred_output at main-loop time, so the OT send is safe.
+void logSink(const char *str) {
+    int n = 0;
+    while (str[n]) n++;
+    if (n > 0) statsd_log(str, n);
+}
 #endif
 
 #if defined(__ppc__)

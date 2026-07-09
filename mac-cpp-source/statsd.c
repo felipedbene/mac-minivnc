@@ -50,7 +50,9 @@ int statsd_fmt(char *buf, int cap, const char *fmt, ...) {
 #include <OpenTptInternet.h>          /* InetAddress, OTInitInetAddress, InetHost */
 
 static EndpointRef g_ep    = kOTInvalidEndpointRef;
-static InetAddress g_to;
+static InetAddress g_to;               /* statsd metrics destination */
+static InetAddress g_log_to;           /* plain-text log-sink destination */
+static int         g_log_ready = 0;
 static int         g_state = 0;       /* 0 = closed, 1 = open, -1 = failed */
 static long        g_ok = 0, g_fail = 0, g_lasterr = 0;
 
@@ -103,28 +105,46 @@ OSErr statsd_open(const char *ip, unsigned short port) {
     return noErr;
 }
 
-void statsd_send(const char *buf, int len) {
+/* Fire one datagram to dst. Shared by statsd_send (metrics) and statsd_log. */
+static void sd_send_to(InetAddress *dst, const char *buf, int len) {
     TUnitData ud;
     OTResult  r;
 
     if (g_state != 1 || !buf || len <= 0) return;
 
     OTMemzero(&ud, sizeof(ud));
-    ud.addr.buf  = (UInt8 *)&g_to;
-    ud.addr.len  = sizeof(g_to);
+    ud.addr.buf  = (UInt8 *)dst;
+    ud.addr.len  = sizeof(*dst);
     ud.udata.buf = (UInt8 *)buf;
     ud.udata.len = (ByteCount)len;
 
     r = OTSndUData(g_ep, &ud);
     if (r == kOTLookErr) {
-        /* The OT UDP trap: one ICMP port-unreachable (collector not up yet)
-         * queues a T_UDERR and every later send returns kOTLookErr — the
-         * "exactly one datagram ever arrives" symptom. Clear it and retry. */
+        /* The OT UDP trap: one ICMP port-unreachable (sink not up yet) queues a
+         * T_UDERR and every later send returns kOTLookErr — the "exactly one
+         * datagram ever arrives" symptom. Clear it and retry once. */
         if (OTLook(g_ep) == T_UDERR) OTRcvUDErr(g_ep, NULL);
         r = OTSndUData(g_ep, &ud);
     }
     if (r == kOTNoError) g_ok++;
     else { g_fail++; g_lasterr = (long)r; }
+}
+
+void statsd_send(const char *buf, int len) {
+    sd_send_to(&g_to, buf, len);
+}
+
+OSErr statsd_log_open(const char *ip, unsigned short port) {
+    InetHost host;
+    if (!parse_dotted_quad(ip, &host)) return paramErr;
+    OTInitInetAddress(&g_log_to, (InetPort)port, host);
+    g_log_ready = 1;
+    return noErr;
+}
+
+void statsd_log(const char *buf, int len) {
+    if (!g_log_ready) return;
+    sd_send_to(&g_log_to, buf, len);
 }
 
 void statsd_close(void) {
@@ -138,8 +158,10 @@ void statsd_close(void) {
 
 #else /* !STATSD_OT — no Open Transport on this target: no-op API */
 
-OSErr statsd_open(const char *ip, unsigned short port) { (void)ip; (void)port; return 0; }
-void  statsd_send(const char *buf, int len)            { (void)buf; (void)len; }
-void  statsd_close(void)                               { }
+OSErr statsd_open(const char *ip, unsigned short port)     { (void)ip; (void)port; return 0; }
+void  statsd_send(const char *buf, int len)                { (void)buf; (void)len; }
+OSErr statsd_log_open(const char *ip, unsigned short port) { (void)ip; (void)port; return 0; }
+void  statsd_log(const char *buf, int len)                 { (void)buf; (void)len; }
+void  statsd_close(void)                                   { }
 
 #endif /* STATSD_OT */
