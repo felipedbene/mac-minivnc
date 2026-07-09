@@ -640,7 +640,12 @@ Boolean processMessageFragments (CallContext context) {
     static unsigned short resumeWriteAt = -1;
 
     if (context == asMainLoop) {
-        if (resumeReadAt != -1) {
+        // NB: resumeReadAt is unsigned short holding 0xFFFF as the "none" sentinel.
+        // Compare against (unsigned short)-1, not -1: with 32-bit int (PowerPC) the
+        // unsigned short promotes to 65535 and "!= -1" is ALWAYS true, so the
+        // deferred path re-enters forever, setPosition(65535) runs past the RDS and
+        // it reads zeros in a loop -> type-1 crash. (68k's 16-bit int hid this.)
+        if (resumeReadAt != (unsigned short)-1) {
             inStream.setPosition(resumeReadAt);
             resumeReadAt = -1;
             dprintf("\n==== Starting deferred messages ====\n");
@@ -652,7 +657,7 @@ Boolean processMessageFragments (CallContext context) {
 
     unsigned short msgStart = 0;
 
-    if (resumeWriteAt != -1) {
+    if (resumeWriteAt != (unsigned short)-1) {   // same 32-bit-int sentinel fix as above
         pb.msgAvail = resumeWriteAt;
         resumeWriteAt = -1;
         goto continueInterruptedMessage;

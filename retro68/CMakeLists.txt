@@ -66,6 +66,10 @@ target_compile_definitions(MiniVNC PRIVATE TARGET_API_MAC_OS8=1 OLDROUTINENAMES=
 target_compile_options(MiniVNC PRIVATE
     -include ${CMAKE_CURRENT_SOURCE_DIR}/prefix.h
     -ffunction-sections -fdata-sections
+    # The code was written for 68k, where `char` is signed. PowerPC defaults to
+    # unsigned char, which breaks `char` loop counters like `while (--n != -1)`.
+    # Force signed char everywhere so PPC matches the 68k assumptions.
+    -fsigned-char
     $<$<COMPILE_LANGUAGE:CXX>:-fpermissive;-fno-exceptions;-fno-rtti>
 )
 # Dead-code elimination (matches casquinha's known-good config): drops unused glue
