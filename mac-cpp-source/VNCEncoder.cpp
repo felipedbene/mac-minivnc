@@ -39,6 +39,10 @@ unsigned long  fbUpdateBufferSize;
 int tile_x, tile_y;
 
 OSErr VNCEncoder::setup() {
+    // Was empty (no return) — on PPC GCC emits a trap for the missing return,
+    // firing "error of type 10" when Start Server calls it. Encoder buffers are
+    // allocated lazily in fbSyncTasks(), so this is just a stub.
+    return noErr;
 }
 
 OSErr VNCEncoder::destroy() {
