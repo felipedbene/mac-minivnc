@@ -91,3 +91,63 @@ data:
         metrics:
           receivers: [statsd]
           exporters: [prometheus]
+---
+# Ingress: dedicated MetalLB VIP on the 10.0.100.x pool so the PowerPC Mac sends
+# statsd straight to 10.0.100.116:8125/UDP (mirrors gopher-spot/log-sink). Must
+# match STATSD_HOST/STATSD_PORT in mac-cpp-source/main.cpp (fio A2).
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector-statsd
+  namespace: observability
+  labels:
+    app: otel-collector
+  annotations:
+    metallb.universe.tf/loadBalancerIPs: 10.0.100.116
+spec:
+  type: LoadBalancer
+  selector:
+    app: otel-collector
+  ports:
+    - name: statsd
+      port: 8125
+      targetPort: 8125
+      protocol: UDP
+---
+# Scrape target: cluster-internal /metrics for the kube-prometheus-stack operator.
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector-metrics
+  namespace: observability
+  labels:
+    app: otel-collector
+spec:
+  type: ClusterIP
+  selector:
+    app: otel-collector
+  ports:
+    - name: metrics
+      port: 8889
+      targetPort: 8889
+      protocol: TCP
+---
+# release: monitoring matches the operator's serviceMonitorSelector; its
+# namespaceSelector is empty (all namespaces), so this is picked up here.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: otel-collector
+  namespace: observability
+  labels:
+    release: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: otel-collector
+  namespaceSelector:
+    matchNames: [observability]
+  endpoints:
+    - port: metrics          # only the ClusterIP service exposes this port
+      path: /metrics
+      interval: 30s
