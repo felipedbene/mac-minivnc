@@ -17,7 +17,15 @@
 
 #pragma once
 
-#define USE_STDOUT               1
+// USE_STDOUT drives the SIOUX-backed "Server Logs" console window, which is a
+// CodeWarrior-only library. Under Retro68/GCC it's disabled for now (first-light
+// port); logging still fills the DebugLog ring buffer and can be routed to a
+// Retro68 console as a follow-up.
+#if defined(__GNUC__)
+    #define USE_STDOUT           0
+#else
+    #define USE_STDOUT           1
+#endif
 #define USE_TIGHT_AUTH           1 // Use tight auth and file transfers
 #define USE_TURBO_FEATURES       1 // Use fence and continuous updates
 #define USE_IN_PLACE_COMPRESSION 1
@@ -108,7 +116,7 @@ struct VNCConfig {
     5,            /* zLibLevel */ \
     "\pMacintosh",/* sessionName */ \
     5900,         /* tcpPort */ \
-    'µVNC'        /* validation */ \
+    'ï¿½VNC'        /* validation */ \
 };
 
 

@@ -15,12 +15,17 @@
  *   location: <http://www.gnu.org/licenses/>.                              *
  ****************************************************************************/
 
-ControlHandle FindCHndl(DialogPtr dlg, int item, short *type);
+#pragma once
 
-void ShowStatus(ConstStr255Param pStr);
-void SetDialogTitle(ConstStr255Param pStr);
-int ShowAlert(unsigned long type, short id, ConstStr255Param pStr);
+#include "MacTCP.h"
+#include "VNCFrameBuffer.h"
 
-void ShowStatus(const char* format, ...);
-void SetDialogTitle(const char* format, ...);
-int ShowAlert(unsigned long type, short id, const char* format, ...);
+class VNCEncodeCursor {
+    public:
+        static void    clear();
+        static Size    minBufferSize();
+        static Boolean needsUpdate();
+        static Boolean getChunk(wdsEntry *wds);
+        static void    adjustCursorVisibility(Boolean allowHiding);
+        static void    idleTask();
+};

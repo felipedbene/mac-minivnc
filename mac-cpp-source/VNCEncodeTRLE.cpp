@@ -96,6 +96,8 @@
 #define HAS_LAST_PALETTE  ALLOW_PALETTE_REUSE && (USE_PACKED_PALETTE || USE_RLE_TILES)
 
 #define src32 ((unsigned long*)src)
+// GCC rejects post-increment on a cast expression (CodeWarrior allowed it).
+#define POSTINC(p,T) (*(T*)(((p) += sizeof(T)) - sizeof(T)))
 
 unsigned char lastTile = 0;
 #if HAS_LAST_PALETTE
@@ -440,7 +442,7 @@ void VNCEncodeTRLE::begin() {
                         unsigned short pixels = epb.rows * epb.cols;
                         do {
                             if(bitsLeft == 0) {
-                                packed = *src32++;
+                                packed = POSTINC(src,unsigned long);
                                 bitsLeft = 32;
                             }
                             emitColor(dst, (packed & lmask) >> rsft);

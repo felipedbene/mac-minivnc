@@ -17,7 +17,13 @@
 
 #pragma once
 
-#define USE_ASM_CODE 1
+// Retro68/GCC cannot compile the CodeWarrior inline-asm tile encoder
+// (VNCEncodeTilesASM.cpp); fall back to the pure-C twin (VNCEncodeTilesC.cpp).
+#if defined(__GNUC__)
+    #define USE_ASM_CODE 0
+#else
+    #define USE_ASM_CODE 1
+#endif
 
 struct ColorInfo {
     unsigned char colorPal[127];

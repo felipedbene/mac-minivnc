@@ -20,7 +20,13 @@
 #include "VNCEncodeTRLE.h"
 
 #define DEBUG_SOLID_TILE 0 // Set to one to show solid tiles
-#define USE_ENCODER      0 // 0: Assembly; 1: Hybrid; 2: C++
+// 0: Assembly; 1: Hybrid; 2: C++. Retro68/GCC can't build the CodeWarrior
+// inline asm, so use the pure-C++ encoder there.
+#if defined(__GNUC__)
+    #define USE_ENCODER  2
+#else
+    #define USE_ENCODER  0
+#endif
 
 #define TileRaw        0
 #define TileSolid      1
@@ -40,6 +46,7 @@ extern unsigned char lastTile;
  *
  * This function will modify registers a0-a2 and d0-d2
  */
+#if USE_ENCODER != 2  // asm tile encoder; unused (and unbuildable under GCC) in the pure-C++ path
 static asm unsigned short _encodeTile(const unsigned char *src:__A0, unsigned char *dst:__A1, unsigned short rows:__D0) {
     #define src     a0
     #define dst     a1
@@ -161,6 +168,7 @@ uSolidWhiteTile:
     #undef start
     #undef rows
 }
+#endif // USE_ENCODER != 2
 
 #if USE_ENCODER == 0
     asm Boolean getChunkMonochrome(int x, int y, int w, int h, wdsEntry *wdsPtr) {
@@ -300,14 +308,25 @@ uSolidWhiteTile:
 #else
     // C++ Reference Encoder
 
+    // Fixed-resolution builds know the stride at compile time; generic builds
+    // read it from the runtime global fbStride.
+    #ifdef VNC_BYTES_PER_LINE
+        #define TILE_STRIDE VNC_BYTES_PER_LINE
+    #else
+        #define TILE_STRIDE stride
+    #endif
+
     #define TILE_LINE(ROW) if(rows == ROW) goto done; \
-                         *dst++ = src[0 + ROW * VNC_BYTES_PER_LINE]; \
-                         *dst++ = src[1 + ROW * VNC_BYTES_PER_LINE];
+                         *dst++ = src[0 + ROW * TILE_STRIDE]; \
+                         *dst++ = src[1 + ROW * TILE_STRIDE];
 
     unsigned short encodeTile(const unsigned char *src, unsigned char *dst, unsigned short rows);
 
     unsigned short encodeTile(const unsigned char *src, unsigned char *dst, unsigned short rows) {
         unsigned char *start = dst;
+        #ifndef VNC_BYTES_PER_LINE
+            const unsigned long stride = fbStride;
+        #endif
 
         if(tile_y && dst != fbUpdateBuffer) {
             // Packed pallete type with pallete reused from previous tile
@@ -341,7 +360,9 @@ uSolidWhiteTile:
         return dst - start;
     }
 
-    Boolean VNCEncodeTRLE::getChunk(int x, int y, int w, int h, wdsEntry *wds) {
+    // Matches the free-function declaration in VNCEncodeTRLE.h and the caller in
+    // VNCEncoder.cpp (the never-built C++ path had named it VNCEncodeTRLE::getChunk).
+    Boolean getChunkMonochrome(int x, int y, int w, int h, wdsEntry *wds) {
         const char rows = min(16, h - tile_y);
         unsigned char *dst = fbUpdateBuffer;
         unsigned char *src = VNCFrameBuffer::getPixelAddr(x, y + tile_y);

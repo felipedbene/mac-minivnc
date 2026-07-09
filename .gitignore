@@ -1,0 +1,7 @@
+# Retro68 CMake build trees (generated; build with retro68/build.sh)
+/retro68/build/
+/retro68/build-ppc/
+
+# object files and scratch
+*.o
+mac-cpp-source/g_*.txt
