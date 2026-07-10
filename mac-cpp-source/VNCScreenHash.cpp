@@ -94,9 +94,19 @@ OSErr VNCScreenHash::setup() {
     evbl.ourProc = myVBLTask;
     evbl.vblTask.qType = vType;
 #if defined(__ppc__)
-    // PowerPC: no A5 trampoline — wrap the VBL routine in a UPP; the Mixed Mode
-    // Manager restores the app's RTOC when the OS fires the task.
-    evbl.vblTask.vblAddr = NewVBLUPP(myVBLTask);
+    // PowerPC: wrap the VBL routine in a UPP (Mixed Mode restores our RTOC when
+    // fired). CRUCIAL: allocate the RoutineDescriptor in the SYSTEM heap. The
+    // Vertical Retrace Manager only keeps servicing an application's VBL task
+    // while that app is in the background if the task's entry point lives in
+    // globally-valid memory — this is the PowerPC analogue of the 68k system-heap
+    // JMP stub in makeVBLTaskPersistent(). With the UPP in the app heap the task
+    // silently stops being called the moment MiniVNC is switched out.
+    {
+        THz saveZone = GetZone();
+        SetZone(SystemZone());
+        evbl.vblTask.vblAddr = NewVBLUPP(myVBLTask);
+        SetZone(saveZone);
+    }
 #elif defined(__GNUC__)
     evbl.vblTask.vblAddr = (VBLUPP)preVBLTaskAsm;
 #else
@@ -266,7 +276,16 @@ VBL_PASCAL void VNCScreenHash::myVBLTask(VBLTaskPtr theVBL) {
             const unsigned int fbHeight = VNC_FB_HEIGHT;
         #endif
         if(row < fbHeight) {
-            const unsigned int numRows = min(fbHeight - row, fbHeight/16);
+            // Rows hashed per VBL tick. The 68000 splits the pass across 16
+            // ticks so a single interrupt doesn't hog the CPU; PowerPC is far
+            // faster, so it uses bigger chunks (fewer ticks per pass) to cut
+            // update latency, while still doing less per tick than a 68k tick.
+            #if defined(__ppc__)
+                const unsigned int rowChunk = fbHeight / 4;
+            #else
+                const unsigned int rowChunk = fbHeight / 16;
+            #endif
+            const unsigned int numRows = min(fbHeight - row, rowChunk);
             computeHashesFast(numRows);
             row += numRows;
             theVBL->vblCount = 1;
@@ -298,10 +317,15 @@ VBL_PASCAL void VNCScreenHash::myVBLTask(VBLTaskPtr theVBL) {
                 dirtyRect.w = 0;
                 dirtyRect.h = 0;
             } else {
-                // Not enough dirt, so keep waiting
+                // Not enough dirt, so keep waiting. Shorter poll wait on the
+                // faster PowerPC to cut update latency (68k keeps its 16 ticks).
                 row = 0;
                 beginCompute();
-                theVBL->vblCount = 16;
+                #if defined(__ppc__)
+                    theVBL->vblCount = 4;
+                #else
+                    theVBL->vblCount = 16;
+                #endif
             }
         }
 }
@@ -373,35 +397,23 @@ void VNCScreenHash::endCompute() {
 void VNCScreenHash::computeHashes(unsigned int rows) {
     const unsigned long *l = scrnPtr;
 
-    #define PROCESS_CHUNK(col) pix = *l++; rowHash += pix; *colHash++ = *colHash + pix;
+    // Process one full framebuffer row per iteration. COL_HASH_SIZE is
+    // ceil(stride/4), so this covers the ENTIRE row width and advances `l` by
+    // exactly one stride to the next row. (The previous version hard-coded 16
+    // longs = 64 bytes, which was only correct for the original 512x1-bit mono
+    // build. On an 800x8-bit / 832-stride screen it hashed just the leftmost 64
+    // pixels and mis-stepped rows, so change detection only ever saw x=0..64.)
+    const size_t colHashSize = COL_HASH_SIZE;
 
     //HideCursor();
     for(;rows--;) {
         unsigned long  rowHash = 0;
         unsigned long *colHash = data->colHashNext;
-        unsigned long  pix;
-        PROCESS_CHUNK(0);
-        PROCESS_CHUNK(1);
-        PROCESS_CHUNK(2);
-        PROCESS_CHUNK(3);
-        PROCESS_CHUNK(4);
-        PROCESS_CHUNK(5);
-        PROCESS_CHUNK(6);
-        PROCESS_CHUNK(7);
-        PROCESS_CHUNK(8);
-        PROCESS_CHUNK(9);
-        PROCESS_CHUNK(10);
-        PROCESS_CHUNK(11);
-        PROCESS_CHUNK(12);
-        PROCESS_CHUNK(13);
-        PROCESS_CHUNK(14);
-        PROCESS_CHUNK(15);
-        #if VNC_FB_WIDTH == 640
-            PROCESS_CHUNK(16);
-            PROCESS_CHUNK(17);
-            PROCESS_CHUNK(18);
-            PROCESS_CHUNK(19);
-        #endif
+        for(size_t c = 0; c < colHashSize; c++) {
+            const unsigned long pix = *l++;
+            rowHash  += pix;
+            colHash[c] += pix;
+        }
         *scrnRowHashPtr++ = rowHash;
     }
     //ShowCursor();

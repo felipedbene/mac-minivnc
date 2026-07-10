@@ -1,0 +1,41 @@
+# MiniVNC telemetry stack — local, reproducible (Docker Compose).
+#
+# Brings up the same pipeline as the Kubernetes manifests in ../:
+#   MiniVNC --statsd/UDP:8125--> otel-collector --/metrics:8889--> Prometheus:9090
+#   MiniVNC --dprintf/UDP:5514--> log-sink (stdout)
+#
+# Usage:
+#   docker compose -f deploy/docker-compose/compose.yaml up
+#
+# Then point MiniVNC at this host: in mac-cpp-source/MetricsConfig.local.h set
+#   STATSD_HOST / LOG_HOST = this machine's LAN IP, ports 8125 / 5514,
+# and drop the "MiniVNC Telemetry" marker file next to the app. See
+# docs/TELEMETRY.md.
+
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.117.0
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./otel-config.yaml:/etc/otel/config.yaml:ro
+    ports:
+      - "8125:8125/udp"   # statsd ingress from MiniVNC
+      - "8889:8889"       # Prometheus exposition (scraped below)
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"       # Prometheus UI / query
+    restart: unless-stopped
+
+  # Plain-text UDP log sink: prints each dprintf datagram to stdout.
+  #   docker compose ... logs -f log-sink
+  log-sink:
+    image: alpine/socat:latest
+    command: ["-u", "UDP4-LISTEN:5514,reuseaddr,fork", "STDOUT"]
+    ports:
+      - "5514:5514/udp"   # dprintf log ingress from MiniVNC
+    restart: unless-stopped

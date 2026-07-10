@@ -44,14 +44,10 @@
     #define MINIVNC_HAS_OT 0
 #endif
 
-// statsd collector target — must match the MetalLB VIP provisioned in Track B.
-#define STATSD_HOST "10.0.100.116"
-#define STATSD_PORT 8125
-
-// Plain-text log sink for dprintf output (the gopher-spot UDP log-sink;
-// read with: kubectl --context debene -n gopher-spot logs -f deploy/log-sink).
-#define LOG_HOST "10.0.100.114"
-#define LOG_PORT 5514
+// Telemetry + debug-logging endpoints and the marker-file name. Ships pointing
+// at localhost with the feature OFF; a git-ignored MetricsConfig.local.h can
+// override the endpoints. See MetricsConfig.h / docs/TELEMETRY.md.
+#include "MetricsConfig.h"
 
 #define DEBUG_SEGMENT_LOAD 0
 
@@ -125,6 +121,26 @@ Boolean ToggleWindowVisibility(WindowPtr whatWindow);
     MenuHandle checkLoadedSegments();
 #endif
 
+// Telemetry + debug logging are opt-in: they turn on only when a marker file
+// (METRICS_MARKER_FILE) sits in the same folder as the MiniVNC application.
+// Returns true when that file is present. See MetricsConfig.h / docs/TELEMETRY.md.
+static Boolean TelemetryMarkerPresent() {
+    // Find the folder the running application lives in (via our resource file).
+    FCBPBRec param;
+    param.ioCompletion = NULL;
+    param.ioNamePtr    = NULL;
+    param.ioVRefNum    = 0;
+    param.ioRefNum     = CurResFile();
+    param.ioFCBIndx    = 0;
+    if (PBGetFCBInfo(&param, FALSE) != noErr) return false;
+
+    // The marker file exists in that folder iff FSMakeFSSpec succeeds.
+    FSSpec spec;
+    OSErr err = FSMakeFSSpec(param.ioFCBVRefNum, param.ioFCBParID,
+                             (ConstStr255Param) METRICS_MARKER_FILE, &spec);
+    return err == noErr;
+}
+
 main() {
     // Setup the toolbox ourselves
 
@@ -136,14 +152,19 @@ main() {
     InitDialogs(nil);
     InitCursor();
 
-    // fio A2: bring up Open Transport + the statsd metrics emitter. statsd_open
-    // is a no-op on non-OT targets, so this is safe to call unconditionally.
-    #if MINIVNC_HAS_OT
-        InitOpenTransport();
-    #endif
-    statsd_open(STATSD_HOST, STATSD_PORT);
-    statsd_log_open(LOG_HOST, LOG_PORT);   // dprintf -> UDP log sink
-    metrics_boot_stage(1);   // fio A4: OT + statsd up
+    // Telemetry + debug logging are opt-in, armed by a marker file next to the
+    // app (see MetricsConfig.h / docs/TELEMETRY.md). When absent, we never open
+    // the statsd / log-sink endpoints, so every metrics_* and dprintf call is a
+    // no-op — this is the shipping default.
+    const Boolean telemetryOn = TelemetryMarkerPresent();
+    if (telemetryOn) {
+        #if MINIVNC_HAS_OT
+            InitOpenTransport();
+        #endif
+        statsd_open(STATSD_HOST, STATSD_PORT);
+        statsd_log_open(LOG_HOST, LOG_PORT);   // dprintf -> UDP log sink
+    }
+    metrics_boot_stage(1);   // fio A4: OT + statsd up (no-op unless telemetry on)
 
     #if USE_CODE_PROFILER
         if (ProfilerInit(collectDetailed, bestTimeBase, 9000, 15)) {
@@ -187,9 +208,12 @@ main() {
         }
     #else
         SetupMenuBar();
-        vncConfig.enableLogging = true;   // debug: stream dprintf to the UDP log sink
+        // Debug logging follows the same marker file as telemetry: dprintf is
+        // gated on vncConfig.enableLogging, so this streams server logs to the
+        // UDP log sink only when the operator has armed it.
+        vncConfig.enableLogging = telemetryOn;
     #endif
-    metrics_boot_stage(5);   // debug: menu bar set up
+    metrics_boot_stage(5);
 
     #ifdef VNC_HEADLESS_MODE
         if(RunningAtStartup()) {
@@ -199,7 +223,7 @@ main() {
     #else
         vncConfig.autoRestart = 0;
     #endif
-    metrics_boot_stage(6);   // debug: headless auto-start check done
+    metrics_boot_stage(6);
 
     UpdateMenuState();
 

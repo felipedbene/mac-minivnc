@@ -544,7 +544,14 @@ pascal void tcpSendServerInit(TCPiopb *pb) {
         BlockMove(vncConfig.sessionName + 1, vncServerMessage.init.name, vncServerMessage.init.nameLength);
 
         myWDS[0].ptr = (Ptr) &vncServerMessage.init;
-        myWDS[0].length = sizeof(vncServerMessage.init) - sizeof(vncServerMessage.init.name) + vncServerMessage.init.nameLength;
+        // The wire ServerInit is the fixed header (fbWidth+fbHeight+format+
+        // nameLength) immediately followed by <nameLength> name bytes. Do NOT
+        // size it as sizeof(init) - sizeof(init.name): on PowerPC the struct's
+        // 4-byte `nameLength` rounds sizeof(VNCServerInit) up past name[10] with
+        // 2 bytes of trailing padding, so that formula sends 2 stray bytes after
+        // the name. The client reads them as a bogus FramebufferUpdate header and
+        // dies with "bad rectangle". offsetof() ignores trailing padding.
+        myWDS[0].length = offsetof(VNCServerInit, name) + vncServerMessage.init.nameLength;
 
         #if USE_TIGHT_AUTH
             if (vncConfig.allowTightAuth) {
@@ -881,6 +888,13 @@ void vncPointerEvent(const VNCPointerEvent &pointerEvent) {
         newMousePosition.v = pointerEvent.y;
         LMSetMouseTemp(newMousePosition);
         LMSetRawMouseLocation(newMousePosition);
+        // Also set the *processed* mouse location (Mouse, 0x0830) directly. On
+        // 68k the VBL cursor-coupling copies RawMouse -> Mouse before the next
+        // event is posted, but on PowerPC that coupling doesn't propagate in
+        // time, so PostEvent(mouseDown) below stamps the event's `where` from a
+        // stale Mouse and every click lands at the wrong spot (beeps, selects
+        // nothing). Writing Mouse here makes the posted click land where asked.
+        LMSetMouseLocation(newMousePosition);
         LMSetCursorNew(LMGetCrsrCouple());
 
         vncLastMousePosition = newMousePosition;
@@ -920,6 +934,13 @@ void vncClientCutText(const VNCClientCutText &cutText, const char *text) {
 }
 
 #if USE_TURBO_FEATURES
+    // RFB ServerFence on the wire is exactly 9 bytes of header (1 message + 3
+    // padding + 4 flags + 1 length) followed by <length> payload bytes. Do NOT
+    // use sizeof(VNCFenceMessage): the trailing `length` byte after the 4-byte
+    // `flags` makes the struct pad to 12 on PowerPC, which would inject 3 stray
+    // bytes into the stream and desync every message that follows.
+    #define kServerFenceHeaderLen 9
+
     void vncClientFence(const VNCFenceMessage &fence) {
         dprintf("TurboVNC: Got fence request %ld\n", fence.flags);
 
@@ -927,7 +948,7 @@ void vncClientCutText(const VNCClientCutText &cutText, const char *text) {
         if (fence.flags & mFenceRequest) {
             vncServerMessage.fence.message = mServerFence;
             vncServerMessage.fence.flags  &= mFenceReqMask;
-            tcpSendReply((Ptr)&vncServerMessage, sizeof(vncServerMessage.fence) + vncServerMessage.fence.length, tcpFinishMultiPartMessage);
+            tcpSendReply((Ptr)&vncServerMessage, kServerFenceHeaderLen + vncServerMessage.fence.length, tcpFinishMultiPartMessage);
         }
     }
 
@@ -944,7 +965,7 @@ void vncClientCutText(const VNCClientCutText &cutText, const char *text) {
         vncServerMessage.fence.padding[2] = 0;
         vncServerMessage.fence.flags      = mFenceBlockBefore;
         vncServerMessage.fence.length     = 0;
-        tcpSendReply((Ptr)&vncServerMessage, sizeof(vncServerMessage.fence), vncDoNothing);
+        tcpSendReply((Ptr)&vncServerMessage, kServerFenceHeaderLen + vncServerMessage.fence.length, vncDoNothing);
     }
 
     pascal void vncInitialServerFence(TCPiopb *pb) {
@@ -956,7 +977,7 @@ void vncClientCutText(const VNCClientCutText &cutText, const char *text) {
             vncServerMessage.fence.padding[2] = 0;
             vncServerMessage.fence.flags      = 7;
             vncServerMessage.fence.length     = 0;
-            tcpSendReply((Ptr)&vncServerMessage, sizeof(vncServerMessage.fence), tcpFinishMultiPartMessage);
+            tcpSendReply((Ptr)&vncServerMessage, kServerFenceHeaderLen + vncServerMessage.fence.length, tcpFinishMultiPartMessage);
         }
     }
 

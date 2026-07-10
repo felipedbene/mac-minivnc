@@ -1,0 +1,62 @@
+# MiniVNC dprintf log sink (debene cluster)
+#
+# A tiny UDP → stdout relay: every dprintf datagram MiniVNC sends (when
+# telemetry is armed) is printed to the pod log. Ingress is a dedicated MetalLB
+# VIP (10.0.100.114:5514/UDP) so the PowerPC Mac sends straight to it; must match
+# LOG_HOST/LOG_PORT (mac-cpp-source/MetricsConfig.h or the local override).
+#
+# Apply with:  kubectl --context debene apply -f deploy/log-sink.yaml
+# Read with:   kubectl --context debene -n gopher-spot logs -f deploy/log-sink
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: log-sink
+  namespace: gopher-spot
+  labels:
+    app: log-sink
+    app.kubernetes.io/name: log-sink
+    app.kubernetes.io/part-of: minivnc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: log-sink
+  template:
+    metadata:
+      labels:
+        app: log-sink
+    spec:
+      containers:
+        - name: log-sink
+          image: alpine/socat:latest
+          args: ["-u", "UDP4-LISTEN:5514,reuseaddr,fork", "STDOUT"]
+          ports:
+            - name: log
+              containerPort: 5514
+              protocol: UDP
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: log-sink
+  namespace: gopher-spot
+  labels:
+    app: log-sink
+  annotations:
+    metallb.universe.tf/loadBalancerIPs: 10.0.100.114
+spec:
+  type: LoadBalancer
+  selector:
+    app: log-sink
+  ports:
+    - name: log
+      port: 5514
+      targetPort: 5514
+      protocol: UDP
