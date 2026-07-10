@@ -544,13 +544,10 @@ pascal void tcpSendServerInit(TCPiopb *pb) {
         BlockMove(vncConfig.sessionName + 1, vncServerMessage.init.name, vncServerMessage.init.nameLength);
 
         myWDS[0].ptr = (Ptr) &vncServerMessage.init;
-        // The wire ServerInit is the fixed header (fbWidth+fbHeight+format+
-        // nameLength) immediately followed by <nameLength> name bytes. Do NOT
-        // size it as sizeof(init) - sizeof(init.name): on PowerPC the struct's
-        // 4-byte `nameLength` rounds sizeof(VNCServerInit) up past name[10] with
-        // 2 bytes of trailing padding, so that formula sends 2 stray bytes after
-        // the name. The client reads them as a bogus FramebufferUpdate header and
-        // dies with "bad rectangle". offsetof() ignores trailing padding.
+        // Wire ServerInit is the fixed header followed by nameLength name bytes.
+        // Not sizeof(init) - sizeof(name): on PowerPC the trailing struct padding
+        // after name[10] makes that formula 2 bytes too long, which desyncs the
+        // client. offsetof ignores the padding.
         myWDS[0].length = offsetof(VNCServerInit, name) + vncServerMessage.init.nameLength;
 
         #if USE_TIGHT_AUTH
@@ -888,12 +885,10 @@ void vncPointerEvent(const VNCPointerEvent &pointerEvent) {
         newMousePosition.v = pointerEvent.y;
         LMSetMouseTemp(newMousePosition);
         LMSetRawMouseLocation(newMousePosition);
-        // Also set the *processed* mouse location (Mouse, 0x0830) directly. On
-        // 68k the VBL cursor-coupling copies RawMouse -> Mouse before the next
-        // event is posted, but on PowerPC that coupling doesn't propagate in
-        // time, so PostEvent(mouseDown) below stamps the event's `where` from a
-        // stale Mouse and every click lands at the wrong spot (beeps, selects
-        // nothing). Writing Mouse here makes the posted click land where asked.
+        // Also set the processed mouse location (Mouse, 0x0830). On 68k the VBL
+        // coupling copies RawMouse -> Mouse before the next event is posted; on
+        // PowerPC it doesn't in time, so PostEvent below would stamp the click
+        // from a stale Mouse. Set it here so the click lands where asked.
         LMSetMouseLocation(newMousePosition);
         LMSetCursorNew(LMGetCrsrCouple());
 

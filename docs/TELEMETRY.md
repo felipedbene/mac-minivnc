@@ -33,9 +33,8 @@ folder (via `TelemetryMarkerPresent()` in `main.cpp`). If it's there:
 If it's absent, none of that happens. To disable again, delete the file and
 relaunch. (The name can be changed via `METRICS_MARKER_FILE`, below.)
 
-> Why a file and not a checkbox? So an operator can arm diagnostics on a headless
-> or Startup-Items deployment without touching the UI or a rebuild — and so the
-> default, shipping behaviour is unambiguously "off".
+A file (rather than a UI toggle) arms diagnostics on a headless or Startup-Items
+deployment without a rebuild, and keeps the shipping default off.
 
 ---
 

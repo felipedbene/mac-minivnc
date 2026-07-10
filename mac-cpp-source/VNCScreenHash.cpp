@@ -94,13 +94,11 @@ OSErr VNCScreenHash::setup() {
     evbl.ourProc = myVBLTask;
     evbl.vblTask.qType = vType;
 #if defined(__ppc__)
-    // PowerPC: wrap the VBL routine in a UPP (Mixed Mode restores our RTOC when
-    // fired). CRUCIAL: allocate the RoutineDescriptor in the SYSTEM heap. The
-    // Vertical Retrace Manager only keeps servicing an application's VBL task
-    // while that app is in the background if the task's entry point lives in
-    // globally-valid memory — this is the PowerPC analogue of the 68k system-heap
-    // JMP stub in makeVBLTaskPersistent(). With the UPP in the app heap the task
-    // silently stops being called the moment MiniVNC is switched out.
+    // PowerPC: wrap the routine in a UPP (Mixed Mode restores our RTOC). Put the
+    // RoutineDescriptor in the system heap: the Vertical Retrace Manager keeps
+    // servicing a backgrounded app's VBL task only if its entry point lives in
+    // globally-valid memory. With the UPP in the app heap it stops firing the
+    // moment another app comes forward. (PowerPC analogue of the 68k stub above.)
     {
         THz saveZone = GetZone();
         SetZone(SystemZone());
