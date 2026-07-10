@@ -27,9 +27,10 @@ but these encodings are limited to color-capable Macs.
 
 Here are the server capabilities:
 
-| Server               | OS      | TRLE  | ZRLE    | Hextile | Tight | Uploads | Notes                              |
-|----------------------|---------|-------|---------|---------|-------|---------|------------------------------------|
-| [MiniVNC v1.5]       | macOS 7 | Yes   |  Yes    |  Yes    | Yes   |  Yes    | Compatible with all tested clients |
+| Server               | OS        | TRLE  | ZRLE    | Hextile | Tight | Uploads | Notes                                      |
+|----------------------|-----------|-------|---------|---------|-------|---------|--------------------------------------------|
+| [MiniVNC v1.5-ppc] ★ | macOS 8–9 | Yes   |  Yes    |  Yes    | Yes   |  Yes    | **Native PowerPC (CFM)** build — this fork |
+| [MiniVNC v1.5]       | macOS 7   | Yes   |  Yes    |  Yes    | Yes   |  Yes    | Compatible with all tested clients (68k)   |
 | [MiniVNC v1.4]       | macOS 7 | Yes   |  Yes    |  Yes    | No    |  Yes    | Compatible with all tested clients |
 | [MiniVNC v1.3]       | macOS 7 | Yes   |  Yes    |  Yes    | No    |  No     | Compatible with all tested clients |
 | [MiniVNC v1.2]       | macOS 7 | Yes   |  Yes    |  Yes    | No    |  No     | Crashes [TurboVNC]                 |
@@ -53,6 +54,17 @@ developed and tested using a [RaSCSI device] operating as an
 Ethernet bridge, but should also work using a Mac with a built-in
 Ethernet port.
 
+> **★ Native PowerPC port (this fork).** The stock builds are 68k apps that run
+> on Power Macs through the 68k emulator; `v1.5-ppc` is a **native PowerPC (CFM)**
+> binary built with the [Retro68] command-line toolchain — faster, and able to
+> serve a full remote-admin session (control, live updates, menus) while
+> MiniVNC runs in the background behind any other app. See
+> [docs/BUILDING.md](docs/BUILDING.md) to build it (`ARCH=ppc ./build.sh`) and
+> [docs/TELEMETRY.md](docs/TELEMETRY.md) for the optional statsd/OpenTelemetry
+> instrumentation. Built on Marcio Teixeira's MiniVNC (GPL-3.0).
+
+[Retro68]:https://github.com/autc04/Retro68
+
 [RealVNC Viewer]:https://www.realvnc.com/en/connect/download/viewer/
 [TightVNC]:https://www.tightvnc.com/
 [TurboVNC]:https://www.turbovnc.org/
@@ -64,6 +76,7 @@ Ethernet port.
 [MiniVNC v1.3]:https://github.com/marciot/mac-minivnc/releases/tag/v1.3-beta-mar-3-2024
 [MiniVNC v1.4]:https://github.com/marciot/mac-minivnc/releases/tag/v1.4-beta-mar-28-2024
 [MiniVNC v1.5]:https://github.com/marciot/mac-minivnc/releases/tag/v1.5-beta-april-06-2025
+[MiniVNC v1.5-ppc]:https://github.com/felipedbene/mac-minivnc/releases/tag/v1.5-ppc-port-beta
 
 Sponsorship Perks
 -----------------
