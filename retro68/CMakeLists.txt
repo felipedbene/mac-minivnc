@@ -8,8 +8,17 @@ project(MiniVNC CXX C)
 
 set(SRC ${CMAKE_CURRENT_SOURCE_DIR}/../mac-cpp-source)
 
+# The application's signature/creator is 'µVNC' (µ = Mac Roman byte 0xB5). It
+# MUST match the 'µVNC' signature resource + BNDL/FREF baked into
+# MiniVNC.µ.rsrc.bin, or the Finder can't bind the app's icon family and shows
+# the generic application icon. (The earlier port used "MnVN", which is why the
+# built app lost its icon.) string(ASCII 181 ...) emits the raw 0xB5 byte so we
+# don't put a UTF-8 'µ' — which would be two bytes — into this source file.
+string(ASCII 181 MINIVNC_MU)
+set(MINIVNC_CREATOR "${MINIVNC_MU}VNC")
+
 add_application(MiniVNC
-    CREATOR "MnVN"
+    CREATOR "${MINIVNC_CREATOR}"
 
     # --- core sources ---
     ${SRC}/main.cpp

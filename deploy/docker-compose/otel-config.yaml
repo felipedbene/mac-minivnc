@@ -1,0 +1,31 @@
+# OpenTelemetry Collector config — statsd receiver → Prometheus exporter.
+# Identical semantics to the ConfigMap in ../otel-collector.yaml; kept in sync.
+receivers:
+  statsd:
+    endpoint: 0.0.0.0:8125
+    # MiniVNC flushes every 1s; aggregate a few flushes per scrape window.
+    aggregation_interval: 10s
+    # Keep clean metric names; type comes from the statsd |c / |g / |ms suffix.
+    enable_metric_type: false
+    # MiniVNC sends per-second counter deltas (|c); accumulate into a monotonic
+    # cumulative counter so Grafana/PromQL rate() works.
+    is_monotonic_counter: true
+    timer_histogram_mapping:
+      - statsd_type: "timing"      # minivnc.frame_ms |ms
+        observer_type: "gauge"
+
+exporters:
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    metric_expiration: 5m
+    resource_to_telemetry_conversion:
+      enabled: true
+
+service:
+  telemetry:
+    logs:
+      level: info
+  pipelines:
+    metrics:
+      receivers: [statsd]
+      exporters: [prometheus]

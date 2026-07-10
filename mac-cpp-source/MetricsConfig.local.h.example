@@ -1,0 +1,20 @@
+/****************************************************************************
+ *   MetricsConfig.local.h  —  LOCAL, UN-TRACKED override (template)         *
+ *                                                                          *
+ *   Copy this file to  MetricsConfig.local.h  (which is git-ignored) and    *
+ *   set the endpoints for YOUR statsd collector and log sink. These macros  *
+ *   override the localhost placeholders in MetricsConfig.h.                  *
+ *                                                                          *
+ *   This only sets WHERE telemetry is sent. Telemetry is still OFF until a   *
+ *   file named per METRICS_MARKER_FILE is placed next to the MiniVNC app.    *
+ *   See docs/TELEMETRY.md.                                                   *
+ ****************************************************************************/
+
+#define STATSD_HOST "10.0.0.10"   /* your statsd/OTel-collector UDP VIP */
+#define STATSD_PORT 8125
+
+#define LOG_HOST    "10.0.0.11"   /* your plain-text UDP log sink        */
+#define LOG_PORT    5514
+
+/* Optionally rename the marker file that arms telemetry:                     */
+/* #define METRICS_MARKER_FILE "\pMiniVNC Telemetry"                          */
