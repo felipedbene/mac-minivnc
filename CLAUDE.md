@@ -8,12 +8,15 @@ MiniVNC is a VNC (Remote Framebuffer) server written from scratch for vintage 68
 
 ## Building
 
-There is **no command-line build**. This is a Classic Mac OS application built with the **Metrowerks CodeWarrior IDE** (the project file `mac-cpp-source/MiniVNC.µ.bin` is a MacBinary-encoded CodeWarrior project, creator `CWIE`). Development is done on a real vintage Mac or under the **Basilisk II** emulator; CodeWarrior 8 and Symantec C++ 7 are the documented toolchains. Resources live in `mac-cpp-source/MiniVNC.µ.rsrc.bin`.
+Two toolchains:
+- **Retro68 cross-build (command-line)** — `cd retro68 && ./build.sh` for a 68k app, `ARCH=ppc ./build.sh` for a native PowerPC (CFM) app. Outputs `build[-ppc]/MiniVNC.{bin,dsk}`. Needs the Retro68 toolchain (default `~/Retro68-build/toolchain`, override with `$RETRO68`) + CMake. This works from this environment — you CAN compile. Full instructions: [`docs/BUILDING.md`](docs/BUILDING.md).
+- **Metrowerks CodeWarrior IDE** (original) — the project file `mac-cpp-source/MiniVNC.µ.bin` is a MacBinary-encoded CodeWarrior project (creator `CWIE`); build on a real vintage Mac or under **Basilisk II** with CodeWarrior 8 / Symantec C++ 7. Resources live in `mac-cpp-source/MiniVNC.µ.rsrc.bin`.
 
-Consequently:
-- You cannot compile, lint, or run tests from this environment. Verify changes by reasoning about the code, not by building.
+Notes:
+- Prefer verifying behaviour by building (Retro68) and, where possible, running on the target; reason about the code too, but the build is available.
 - `.bin` files are MacBinary (preserve resource forks) — do not treat them as text or "fix" them.
 - Watch for constraints of the era's compilers: no stack-local storage in interrupt-time callbacks, CodeWarrior can't mix C and assembly in one function (whole functions are written in asm), and `dprintf`/`DebugLog` is used instead of a real logger.
+- PowerPC ABI gotchas bite the 68k-era code: `sizeof` of a struct ending in a sub-4-byte field after a `long` gains trailing padding (size wire messages with `offsetof`, not `sizeof`); `char` is unsigned on PPC (`-fsigned-char` is set); interrupt-time tasks (VBL) need their RoutineDescriptor in the **system heap** to run when the app is backgrounded.
 
 ## Build-time configuration
 
