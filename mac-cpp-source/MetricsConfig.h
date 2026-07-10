@@ -1,21 +1,9 @@
-/****************************************************************************
- *   MiniVNC (c) 2022-2024 Marcio Teixeira                                  *
- *                                                                          *
- *   Telemetry + debug-logging configuration.                              *
- *                                                                          *
- *   Both features ship DISABLED. They turn on at runtime ONLY when a       *
- *   marker file (named by METRICS_MARKER_FILE) sits in the same folder as  *
- *   the MiniVNC application. With the marker present, MiniVNC opens the     *
- *   statsd + log-sink UDP endpoints below and streams metrics and dprintf   *
- *   output to them; with it absent, nothing is opened and every emit is a   *
- *   no-op. See docs/TELEMETRY.md for the full walkthrough.                  *
- *                                                                          *
- *   The endpoints below are PLACEHOLDERS pointing at localhost. To aim      *
- *   them at your own collector without committing your infrastructure's     *
- *   addresses, copy MetricsConfig.local.h.example to MetricsConfig.local.h  *
- *   (which is git-ignored) and set the macros there — they win over the     *
- *   defaults below.                                                         *
- ****************************************************************************/
+/*
+ *  Telemetry + debug-logging endpoints. Both ship disabled and arm at
+ *  runtime via a marker file next to the app (see docs/TELEMETRY.md).
+ *  Defaults point at localhost; override them without committing your own
+ *  addresses by copying MetricsConfig.local.h.example -> MetricsConfig.local.h.
+ */
 
 #ifndef MINIVNC_METRICSCONFIG_H
 #define MINIVNC_METRICSCONFIG_H

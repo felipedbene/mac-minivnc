@@ -1,10 +1,10 @@
-> ## 🖥️ Native PowerPC fork
+> ## Native PowerPC fork
 >
-> This is a fork of **[marciot/mac-minivnc](https://github.com/marciot/mac-minivnc)** that adds a **native PowerPC (CFM)** build of MiniVNC. The stock builds are 68k apps that run on Power Macs through the 68k emulator; this one is compiled for PowerPC and is the first that serves a full remote-admin session — control, live screen updates, menus — **while MiniVNC runs in the background** behind another app (Mac OS 8–9).
+> A fork of **[marciot/mac-minivnc](https://github.com/marciot/mac-minivnc)** with a **native PowerPC (CFM)** build. The stock builds are 68k apps that run on Power Macs under the 68k emulator; this one is compiled for PowerPC and can hold a session — control, live updates, menus — while MiniVNC sits in the **background** behind another app (Mac OS 8–9).
 >
-> **[⬇ Download `v1.5-ppc` »](https://github.com/felipedbene/mac-minivnc/releases/tag/v1.5-ppc-port-beta)**  ·  **[🔧 Build it (Retro68) »](docs/BUILDING.md)**  ·  **[📈 Telemetry »](docs/TELEMETRY.md)**
+> [Download `v1.5-ppc`](https://github.com/felipedbene/mac-minivnc/releases/tag/v1.5-ppc-port-beta) · [Build it with Retro68](docs/BUILDING.md) · [Telemetry](docs/TELEMETRY.md)
 >
-> Five PowerPC-specific bugs are fixed here (ServerInit struct-padding desync, stale click position, 64px-only screen updates, update latency, and a background-execution freeze); optional statsd/OpenTelemetry instrumentation ships **off**, armed by a marker file. All credit for MiniVNC goes to **Marcio Teixeira** (GPL-3.0); everything below this line is the upstream README.
+> MiniVNC is by Marcio Teixeira (GPL-3.0); everything below is the upstream README.
 
 ---
 
