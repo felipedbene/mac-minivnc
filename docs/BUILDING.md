@@ -65,6 +65,10 @@ Compile-time behaviour is controlled by `#define`s in
 hard-coded screen geometry/depth for a smaller/faster single-target binary).
 See the *Build-time configuration* notes in the repo for details.
 
+**Color depth:** generic builds accept indexed depths (1/2/4/8 bpp) and native
+true color (16/32 bpp). Optional compile-time depth macros include
+`VNC_FB_256_COLORS`, `VNC_FB_16BIT`, and `VNC_FB_32BIT`.
+
 ## CodeWarrior
 
 The original project file (`mac-cpp-source/MiniVNC.µ.bin`, creator `CWIE`) and

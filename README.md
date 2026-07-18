@@ -59,7 +59,10 @@ Here are the client capabilities:
 | Screen Sharing       | macOS X | No    |  Yes    |  No     |  No     |  No     | Requires MiniVNC 1.2+    |
 
 MiniVNC is built on MacTCP and requires System 7, but it will
-operate on later Macs using Open Transport. MiniVNC has been
+operate on later Macs using Open Transport. Generic builds support
+indexed depths (B&W through 256 colors) and native 16/32-bit true color
+(Thousands/Millions of colors) on color-capable Macs; true-color sessions
+use Raw or ZRLE encoding. MiniVNC has been
 developed and tested using a [RaSCSI device] operating as an
 Ethernet bridge, but should also work using a Mac with a built-in
 Ethernet port.

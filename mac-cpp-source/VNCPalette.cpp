@@ -53,7 +53,16 @@ Size VNCPalette::minBufferSize() {
 void VNCPalette::beginNewSession(const VNCPixelFormat &format) {
     pendingPixFormat.bitsPerPixel = 0;
     BlockMove(&format, &fbPixFormat, sizeof(VNCPixelFormat));
-    vncFlags.fbColorMapNeedsUpdate = true;
+    #ifdef VNC_FB_BITS_PER_PIX
+        const unsigned long depth = VNC_FB_BITS_PER_PIX;
+    #else
+        const unsigned long depth = fbDepth;
+    #endif
+    vncFlags.fbColorMapNeedsUpdate = FB_IS_INDEXED(depth);
+    bytesPerColor = format.bitsPerPixel / 8;
+    if (format.trueColor) {
+        prepareTrueColorRoutines(true);
+    }
 }
 
 void VNCPalette::setPixelFormat(const VNCPixelFormat &format) {
@@ -70,11 +79,13 @@ Boolean VNCPalette::hasWaitingColorMapUpdate() {
 
 VNCColor *VNCPalette::getWaitingColorMapUpdate(unsigned int *paletteSize) {
     #ifdef VNC_FB_BITS_PER_PIX
-        const unsigned char fbDepth = VNC_FB_BITS_PER_PIX;
+        const unsigned long depth = VNC_FB_BITS_PER_PIX;
+    #else
+        const unsigned long depth = fbDepth;
     #endif
     VNCColor *result = NULL;
     if (hasWaitingColorMapUpdate()) {
-        *paletteSize = 1 << fbDepth;
+        *paletteSize = 1 << depth;
         result = (VNCColor*) fbUpdateBuffer;
     }
     vncFlags.fbColorMapNeedsUpdate = false;

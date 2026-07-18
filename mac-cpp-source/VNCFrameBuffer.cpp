@@ -37,7 +37,15 @@ BitMap vncBits = {0};
 
 OSErr VNCFrameBuffer::setup() {
     if (checkScreenResolution()) {
-        vncBits.baseAddr = (Ptr) ScrnBase;
+        if (HasColorQD()) {
+            GDPtr gdp = *GetMainDevice();
+            PixMapPtr gpx = *(gdp->gdPMap);
+            vncBits.baseAddr = gpx->baseAddr;
+            vncBits.rowBytes = gpx->rowBytes & 0x3FFF;
+            vncBits.bounds = gdp->gdRect;
+        } else {
+            vncBits.baseAddr = (Ptr) ScrnBase;
+        }
     }
     #if defined(VNC_FB_MONOCHROME)
         else {
@@ -68,10 +76,12 @@ OSErr VNCFrameBuffer::setup() {
 }
 
 OSErr VNCFrameBuffer::destroy() {
-    if(vncBits.baseAddr && vncBits.baseAddr != (Ptr) ScrnBase) {
-        DisposePtr((Ptr)vncBits.baseAddr);
-        vncBits.baseAddr = 0;
-    }
+    #if defined(VNC_FB_MONOCHROME)
+        if (vncBits.baseAddr && vncBits.baseAddr != (Ptr) ScrnBase) {
+            DisposePtr((Ptr)vncBits.baseAddr);
+            vncBits.baseAddr = 0;
+        }
+    #endif
     VNCPalette::destroy();
     return noErr;
 }
@@ -99,17 +109,26 @@ Boolean VNCFrameBuffer::checkScreenResolution() {
     #if defined(VNC_FB_WIDTH) && defined(VNC_FB_HEIGHT) && defined(VNC_FB_BITS_PER_PIX)
         Boolean isMatch = gdWidth == VNC_FB_WIDTH && gdHeight == VNC_FB_HEIGHT && gdDepth == VNC_FB_BITS_PER_PIX;
         if (!isMatch) {
-            ShowAlert('ERR', 128, "This build of Mini VNC will only work at %d x %d with %d colors.", VNC_FB_WIDTH, VNC_FB_HEIGHT, VNC_FB_PALETTE_SIZE);
+            #if FB_IS_TRUECOLOR(VNC_FB_BITS_PER_PIX)
+                ShowAlert('ERR', 128, "This build of Mini VNC will only work at %d x %d in %d-bit true color.", VNC_FB_WIDTH, VNC_FB_HEIGHT, VNC_FB_BITS_PER_PIX);
+            #else
+                ShowAlert('ERR', 128, "This build of Mini VNC will only work at %d x %d with %d colors.", VNC_FB_WIDTH, VNC_FB_HEIGHT, VNC_FB_PALETTE_SIZE);
+            #endif
         }
     #elif defined(VNC_FB_BITS_PER_PIX)
         Boolean isMatch = gdDepth == VNC_FB_BITS_PER_PIX;
         if (!isMatch) {
-            ShowAlert('ERR', 128, "This build of Mini VNC will only work with %d colors.", VNC_FB_PALETTE_SIZE);
+            #if FB_IS_TRUECOLOR(VNC_FB_BITS_PER_PIX)
+                ShowAlert('ERR', 128, "This build of Mini VNC will only work in %d-bit true color.", VNC_FB_BITS_PER_PIX);
+            #else
+                ShowAlert('ERR', 128, "This build of Mini VNC will only work with %d colors.", VNC_FB_PALETTE_SIZE);
+            #endif
         }
     #else
-        Boolean isMatch = (gdDepth == 1) || (gdDepth == 2) || (gdDepth == 4) || (gdDepth == 8);
+        Boolean isMatch = (gdDepth == 1) || (gdDepth == 2) || (gdDepth == 4) || (gdDepth == 8)
+                       || (gdDepth == 16) || (gdDepth == 32);
         if (!isMatch) {
-            ShowAlert('ERR', 128, "Please set your monitor to Black & White, 4, 16 or 256 grays or colors.");
+            ShowAlert('ERR', 128, "Please set your monitor to a supported depth: B&W, 4, 16, or 256 colors, or 16/32-bit true color.");
         }
     #endif
 
@@ -127,6 +146,18 @@ Boolean VNCFrameBuffer::checkScreenResolution() {
 }
 
 void VNCFrameBuffer::idleTask() {
+    #if !defined(VNC_FB_MONOCHROME)
+        // Track the live screen base for direct capture. The monochrome build must
+        // NOT do this: its baseAddr points at the allocated 1-bit virtual buffer that
+        // CopyBits dithers into, and overwriting it with the color screen's base both
+        // leaks that buffer and reinterprets the color framebuffer as 1-bit.
+        if (HasColorQD()) {
+            GDPtr gdp = *GetMainDevice();
+            PixMapPtr gpx = *(gdp->gdPMap);
+            vncBits.baseAddr = gpx->baseAddr;
+            vncBits.rowBytes = gpx->rowBytes & 0x3FFF;
+        }
+    #endif
     #if defined(VNC_FB_MONOCHROME)
         if (vncBits.baseAddr && (vncBits.baseAddr != (Ptr) ScrnBase)) {
             // We are on a color Mac, do a dithered copy

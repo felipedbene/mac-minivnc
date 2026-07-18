@@ -198,6 +198,19 @@ main() {
         vncConfig.allowZRLE = false;
         vncConfig.allowTightAuth = false;
     }
+    #ifdef VNC_FB_BITS_PER_PIX
+        else if (FB_IS_TRUECOLOR(VNC_FB_BITS_PER_PIX)) {
+            vncConfig.allowTRLE = false;
+            vncConfig.allowHextile = false;
+            vncConfig.allowTightEnc = false;
+        }
+    #else
+        else if (FB_IS_TRUECOLOR(fbDepth)) {
+            vncConfig.allowTRLE = false;
+            vncConfig.allowHextile = false;
+            vncConfig.allowTightEnc = false;
+        }
+    #endif
 
     #if USE_STDOUT
         if (vncConfig.enableLogging) {
@@ -545,6 +558,12 @@ void RefreshServerSettings() {
     ControlHandle hTightEnc  = FindCHndl(gOptions,iTightEnc);
     ControlHandle hTightAuth = FindCHndl(gOptions,iTightAuth);
 
+    #ifdef VNC_FB_BITS_PER_PIX
+        const unsigned long screenDepth = VNC_FB_BITS_PER_PIX;
+    #else
+        const unsigned long screenDepth = fbDepth;
+    #endif
+
     #ifdef VNC_FB_MONOCHROME
     if (true) {
     #else
@@ -554,6 +573,13 @@ void RefreshServerSettings() {
         HiliteControl  (hHexTile,   255);
         HiliteControl  (hTRLE,      0);
         HiliteControl  (hZRLE,      255);
+        HiliteControl  (hTightEnc,  255);
+        HiliteControl  (hTightAuth, 255);
+    } else if (FB_IS_TRUECOLOR(screenDepth)) {
+        HiliteControl  (hRaw,       0);
+        HiliteControl  (hHexTile,   255);
+        HiliteControl  (hTRLE,      255);
+        HiliteControl  (hZRLE,      vncServerActive() && !vncFlags.clientTakesZRLE ? 255 : 0);
         HiliteControl  (hTightEnc,  255);
         HiliteControl  (hTightAuth, 255);
     } else if(vncServerActive()) {

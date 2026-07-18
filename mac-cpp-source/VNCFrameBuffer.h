@@ -47,6 +47,8 @@ class VNCFrameBuffer {
                 return getBaseAddr() + (unsigned long)fbStride * y + x * fbDepth / 8;
             #elif !defined(VNC_BYTES_PER_LINE)
                 return getBaseAddr() + (unsigned long)fbStride * y + x/VNC_FB_PIX_PER_BYTE;
+            #elif defined(VNC_FB_BITS_PER_PIX) && FB_IS_TRUECOLOR(VNC_FB_BITS_PER_PIX)
+                return getBaseAddr() + (unsigned long)VNC_BYTES_PER_LINE * y + x * VNC_FB_BITS_PER_PIX / 8;
             #else
                 return getBaseAddr() + (unsigned long)VNC_BYTES_PER_LINE * y + x/VNC_FB_PIX_PER_BYTE;
             #endif

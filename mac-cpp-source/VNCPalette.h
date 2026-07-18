@@ -41,6 +41,15 @@ class VNCPalette {
         static void beginNewSession(const VNCPixelFormat &format);
         static void setPixelFormat(const VNCPixelFormat &format);
 
+        static void fillScreenPixelFormat(VNCPixelFormat &format, unsigned long depth);
+        static Boolean pixelFormatsMatch(const VNCPixelFormat &a, const VNCPixelFormat &b);
+
+        static unsigned long wireRowBytes(unsigned int pixels);
+        static unsigned long nativeRowBytes(unsigned int pixels);
+        static void copyNativeRowToWire(const unsigned char *src, unsigned char *dst, unsigned int pixels);
+        static void copyNativeTileToWire(const unsigned char *src, unsigned char *dst, short rows, short cols);
+        static void copyNativeTileToCPIXEL(const unsigned char *src, unsigned char *dst, short rows, short cols);
+
         static void setIndexedColor(unsigned int i, int red, int green, int blue);
 
         static void prepareColorRoutines(Boolean isCPIXEL);

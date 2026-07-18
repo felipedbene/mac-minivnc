@@ -209,7 +209,11 @@ void VNCEncoder::compressReset() {
 
         // Send the data
         if(total_out > 0xFFFF) {
+            // A single WDS entry length is 16-bit, so this subrect cannot be sent.
+            // Abort rather than transmit an uninitialized bytesWritten as the length.
             dprintf("too much data to send!\n");
+            epb.bytesWritten = 0;
+            vncState = VNC_ERROR;
         } else {
             epb.bytesWritten = total_out + sizeof(unsigned long);
         }
@@ -281,7 +285,12 @@ void VNCEncoder::compressReset() {
 
         // Send the data
         if(total_out > 0xFFFF) {
+            // A single WDS entry length is 16-bit, so this subrect cannot be sent.
+            // Abort rather than transmit an uninitialized wds->length.
             dprintf("too much data to send!\n");
+            wds->length = 0;
+            wds->ptr = (Ptr) s_outbuf;
+            vncState = VNC_ERROR;
         } else {
             wds->length = total_out + sizeof(unsigned long);
             wds->ptr = (Ptr) s_outbuf;

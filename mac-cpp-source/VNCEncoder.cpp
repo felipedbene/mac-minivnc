@@ -81,12 +81,30 @@ void VNCEncoder::clear() {
 int VNCEncoder::begin() {
     // Select the most appropriate encoder
 
+    #ifdef VNC_FB_BITS_PER_PIX
+        const unsigned long depth = VNC_FB_BITS_PER_PIX;
+    #else
+        const unsigned long depth = fbDepth;
+    #endif
+
     #if defined(VNC_FB_MONOCHROME)
         if (vncFlags.clientTakesTRLE && (!fbPixFormat.trueColor)) {
             selectedEncoder = mTRLEEncoding;
         }
     #else
-        if (vncConfig.allowTRLE && vncFlags.clientTakesTRLE) {
+        if (FB_IS_TRUECOLOR(depth)) {
+            if (vncConfig.allowRaw) {
+                selectedEncoder = mRawEncoding;
+            } else if (vncConfig.allowZRLE && vncFlags.clientTakesZRLE) {
+                selectedEncoder = mZRLEEncoding;
+            } else {
+                // No true-color-capable encoding available; fail cleanly rather
+                // than falling through with a stale selectedEncoder.
+                dprintf("No suitable encoding found!\n");
+                selectedEncoder = lastSelectedEncoder = -1;
+                return false;
+            }
+        } else if (vncConfig.allowTRLE && vncFlags.clientTakesTRLE) {
             selectedEncoder = mTRLEEncoding;
         } else if (vncConfig.allowHextile && vncFlags.clientTakesHextile) {
             selectedEncoder = mHextileEncoding;
@@ -94,7 +112,7 @@ int VNCEncoder::begin() {
             selectedEncoder = mZRLEEncoding;
         } else if (vncConfig.allowTightEnc && vncFlags.clientTakesTightEnc) {
             selectedEncoder = mTightEncoding;
-        } else if (vncConfig.allowRaw && vncFlags.clientTakesRaw && (!fbPixFormat.trueColor) && (fbDepth == 8)) {
+        } else if (vncConfig.allowRaw && vncFlags.clientTakesRaw && (!fbPixFormat.trueColor) && (depth == 8)) {
             selectedEncoder = mRawEncoding;
         }
     #endif
@@ -490,9 +508,11 @@ Boolean VNCEncoder::getUncompressedChunk(EncoderPB &epb) {
 
 Boolean VNCEncoder::getChunk(wdsEntry *wds) {
     #ifdef VNC_FB_BITS_PER_PIX
-        const unsigned char fbDepth = VNC_FB_BITS_PER_PIX;
+        const unsigned long depth = VNC_FB_BITS_PER_PIX;
+    #else
+        const unsigned long depth = fbDepth;
     #endif
-    if ((!hasColorQD) || ((fbDepth == 1) && (selectedEncoder == mTRLEEncoding) && USE_FAST_MONO_ENCODER)) {
+    if ((!hasColorQD) || ((depth == 1) && (selectedEncoder == mTRLEEncoding) && USE_FAST_MONO_ENCODER)) {
         return getChunkMonochrome(fbUpdateRect.x, fbUpdateRect.y, fbUpdateRect.w, fbUpdateRect.h, wds);
     }
     #if !defined(VNC_FB_MONOCHROME)

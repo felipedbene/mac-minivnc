@@ -499,32 +499,12 @@ pascal void tcpSendServerInit(TCPiopb *pb) {
         #endif
         vncServerMessage.init.format.bigEndian = 1;
 
-        #if 0
-            vncServerMessage.init.format.trueColor = 1;
-            vncServerMessage.init.format.bitsPerPixel = 32;
-            vncServerMessage.init.format.depth = 24;
-            vncServerMessage.init.format.redMax = 255;    // 2 bits
-            vncServerMessage.init.format.greenMax = 255;  // 3 bits
-            vncServerMessage.init.format.blueMax = 255;   // 2 bits
-            vncServerMessage.init.format.redShift = 16;
-            vncServerMessage.init.format.greenShift = 8;
-            vncServerMessage.init.format.blueShift = 0;
-
+        #ifdef VNC_FB_BITS_PER_PIX
+            const unsigned long screenDepth = VNC_FB_BITS_PER_PIX;
         #else
-            vncServerMessage.init.format.trueColor = 0;
-            vncServerMessage.init.format.bitsPerPixel = 8;
-            #ifdef VNC_FB_BITS_PER_PIX
-                vncServerMessage.init.format.depth = VNC_FB_BITS_PER_PIX;
-            #else
-                vncServerMessage.init.format.depth = fbDepth;
-            #endif
-            vncServerMessage.init.format.redMax = 3;    // 2 bits
-            vncServerMessage.init.format.greenMax = 7;  // 3 bits
-            vncServerMessage.init.format.blueMax = 3;   // 2 bits
-            vncServerMessage.init.format.redShift = 5;
-            vncServerMessage.init.format.greenShift = 2;
-            vncServerMessage.init.format.blueShift = 0;
+            const unsigned long screenDepth = fbDepth;
         #endif
+        VNCPalette::fillScreenPixelFormat(vncServerMessage.init.format, screenDepth);
 
         VNCPalette::beginNewSession(vncServerMessage.init.format);
         vncFlags.fbUpdateInProgress = false;
@@ -845,16 +825,25 @@ OSErr vncServerIdleTask() {
 void vncSetPixelFormat(const VNCSetPixFormat &pixFormat) {
     const VNCPixelFormat &format = pixFormat.format;
     #ifdef VNC_FB_BITS_PER_PIX
-        const unsigned char fbDepth = VNC_FB_BITS_PER_PIX;
+        const unsigned long depth = VNC_FB_BITS_PER_PIX;
+    #else
+        const unsigned long depth = fbDepth;
     #endif
     dprintf("Client requests TrueColor: %d; bitsPerPixel %d; depth %d; big-endian: %d, max %d/%d/%d; shift %d/%d/%d\n",
         format.trueColor, format.bitsPerPixel, format.depth, format.bigEndian,
         format.redMax, format.greenMax, format.blueMax,
         format.redShift, format.greenShift, format.blueShift
     );
+    if (FB_IS_TRUECOLOR(depth)) {
+        // Clients often send an 8-bit indexed SetPixelFormat even after the
+        // server advertised true color; accepting it would set VNC_ERROR and
+        // stall all further messages (black screen). The handshake format wins.
+        dprintf("Ignoring client SetPixelFormat on native true-color screen.\n");
+        return;
+    }
     if (format.trueColor) {
         VNCPalette::setPixelFormat(format);
-    } else if (format.depth != fbDepth) {
+    } else if (format.depth != depth) {
         dprintf("Client requested an incompatible color depth of %d\n", format.depth);
         vncState = VNC_ERROR;
     }
@@ -1048,8 +1037,18 @@ pascal void vncPrepareForFBUpdate() {
     vncFlags.fbUpdateInProgress = true;
     vncFlags.fbUpdatePending = false;
 
-    // Make sure x falls on a byte boundary
-    unsigned char dx = fbUpdateRect.x & 7;
+    // Align the dirty rect to a safe pixel boundary for the framebuffer depth
+    #ifdef VNC_FB_BITS_PER_PIX
+        const unsigned long screenDepth = VNC_FB_BITS_PER_PIX;
+    #else
+        const unsigned long screenDepth = fbDepth;
+    #endif
+    unsigned char dx;
+    if (FB_IS_TRUECOLOR(screenDepth)) {
+        dx = fbUpdateRect.x & ((32 / screenDepth) - 1);
+    } else {
+        dx = fbUpdateRect.x & 7;
+    }
     fbUpdateRect.x -= dx;
     fbUpdateRect.w += dx;
 

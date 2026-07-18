@@ -347,10 +347,16 @@ void VNCScreenHash::computeDirty(int &x, int &y, int &w, int &h) {
     const size_t colHashSize = COL_HASH_SIZE;
     const size_t rowHashSize = ROW_HASH_SIZE;
     #ifdef VNC_FB_BITS_PER_PIX
-        const unsigned char pixPerByte = 8 / VNC_FB_BITS_PER_PIX;
+        const unsigned long depth = VNC_FB_BITS_PER_PIX;
     #else
-        const unsigned char pixPerByte = 8 / fbDepth;
+        const unsigned long depth = fbDepth;
     #endif
+    unsigned int pixelsPerAlign;
+    if (FB_IS_TRUECOLOR(depth)) {
+        pixelsPerAlign = 32 / depth;
+    } else {
+        pixelsPerAlign = 4 * (8 / depth);
+    }
     unsigned int x1 = 0;
     unsigned int y1 = 0;
     while((x1 < colHashSize) && (data->colHashNext[x1] == data->colHashPrev[x1])) x1++;
@@ -362,8 +368,8 @@ void VNCScreenHash::computeDirty(int &x, int &y, int &w, int &h) {
     while((y2 > y1) && (data->rowHashNext[y2] == data->rowHashPrev[y2])) y2--;
     x2++;
     y2++;
-    x1 *= 4 * pixPerByte;
-    x2 *= 4 * pixPerByte;
+    x1 *= pixelsPerAlign;
+    x2 *= pixelsPerAlign;
 
     if(x2 > x1 && y2 > y1) {
         x = x1;

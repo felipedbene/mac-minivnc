@@ -60,3 +60,13 @@ These are the hard-won hacks documented in the README's "Technical Notes" (read 
 - **Change rectangles are aligned to byte (and, with 32-bit column sums, 32-pixel) boundaries** so 1-bit screen data can be copied without bit-shifting/masking, which is prohibitively slow on the 68000.
 - **TRLE is used even where it violates the VNC spec** because its paletted 1/2/4-bit tile types are the only way to ship sub-8-bit pixels without expanding them to full color bytes.
 - Performance is the overriding design constraint; correctness/accuracy is knowingly sacrificed (missed screen updates, occasional artifacts) to keep the 68000 fast.
+
+## True-color support (16/32-bit) — WIP
+
+Recent work adds native 16/32-bit true-color screens (previously only 1/2/4/8-bit indexed). The critical, non-obvious rule when touching the color path:
+
+- **RAW encoding sends full `bitsPerPixel/8`-byte pixels** (`wireRowBytes`/`copyNativeRowToWire`/`copyNativeTileToWire` in `VNCPaletteTrueColor.cpp` — 4 bytes for a 32-bit screen). This is correct *only* for the RAW encoder.
+- **ZRLE and TRLE send `bytesPerColor`-byte CPIXELs**, not full pixels. When `bitsPerPixel==32` and the color fits in 3 bytes (`colorBits==0x00FFFFFF`), `prepareTrueColorRoutines`/`setupCPIXEL` sets `bytesPerColor=3` and the pixel is packed via `packed = pixel << pixelShift` then masked (`emitTrueColor`, `copyNativeTileToCPIXEL`). **ZRLE is TRLE+zlib, so `VNCEncodeTRLE::encodeTile` feeds the ZRLE stream** — emitting full 4-byte pixels there desyncs every true-color ZRLE client. Never reuse the RAW `copyNative*ToWire` helpers inside a tile/CPIXEL path.
+- `VNCEncoder::begin()` picks **RAW (preferred) or ZRLE** for true color; TRLE/Hextile are indexed-only. `wdsEntry.length` is 16-bit, so a single compressed ZRLE subrect must stay ≤ 0xFFFF bytes (see the "too much data" guard in `VNCEncoderZLib.cpp`).
+
+Known remaining follow-ups (not yet fixed): client `SetPixelFormat` is ignored for true-color screens (`VNCServer.cpp` `vncSetPixelFormat` early-returns — non-standard client formats render wrong), and the `VNC_FB_16BIT/32BIT` fixed-depth build without a fixed `VNC_FB_WIDTH` won't compile (`VNCFrameBuffer.h` `VNC_FB_PIX_PER_BYTE` undefined).

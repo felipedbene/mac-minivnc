@@ -187,6 +187,35 @@ void VNCEncodeTRLE::begin() {
     }
 
     unsigned long VNCEncodeTRLE::encodeTile(const EncoderPB &epb) {
+        #ifdef VNC_FB_BITS_PER_PIX
+            const unsigned long depth = VNC_FB_BITS_PER_PIX;
+        #else
+            const unsigned long depth = fbDepth;
+        #endif
+
+        if (fbPixFormat.trueColor && FB_IS_TRUECOLOR(depth)) {
+            // A true-color raw tile is emitted as CPIXELs (bytesPerColor each),
+            // NOT full bitsPerPixel/8-byte pixels: this tile feeds the TRLE and
+            // (TRLE+zlib) ZRLE streams, both of which use the CPIXEL form.
+            const unsigned long wireLen = (unsigned long)epb.cols * epb.rows * bytesPerColor;
+            if ((1 + wireLen) > epb.bytesAvail) {
+                // Not enough room; let the caller flush/retry, like the indexed path.
+                return 0;
+            }
+            // Static (not stack): encodeTile can run on the constrained send-path
+            // stack, and a ~16 KB local risks overflowing it. copyNativeTileToCPIXEL's
+            // trailing long-store needs a few bytes of slack past wireLen.
+            static unsigned char scratchSpace[64 * 64 * 4 + 256 + ALIGN_PAD];
+            unsigned char *wireTile = ALIGN_LONG(scratchSpace);
+            VNCPalette::copyNativeTileToCPIXEL(epb.src, wireTile, epb.rows, epb.cols);
+            unsigned char *dst = epb.dst;
+            *dst++ = TileRaw;
+            BlockMove(wireTile, dst, wireLen);
+            dst += wireLen;
+            lastTile = TileRaw;
+            return dst - epb.dst;
+        }
+
         const Boolean allowPaletteReuse = (selectedEncoder == mTRLEEncoding);
         const unsigned char *src = epb.src;
         const unsigned char *start = epb.dst;

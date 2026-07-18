@@ -145,13 +145,28 @@ Boolean vncServerActive();
 
 #elif defined(VNC_FB_256_COLORS)
   #define VNC_FB_BITS_PER_PIX 8
+
+#elif defined(VNC_FB_16BIT)
+  #define VNC_FB_BITS_PER_PIX 16
+
+#elif defined(VNC_FB_32BIT)
+  #define VNC_FB_BITS_PER_PIX 32
 #endif
 
-#define VNC_FB_PIX_PER_BYTE (8 / VNC_FB_BITS_PER_PIX)
-#define VNC_FB_PALETTE_SIZE (1 << VNC_FB_BITS_PER_PIX)
+#define FB_IS_INDEXED(d)   ((d) <= 8)
+#define FB_IS_TRUECOLOR(d) ((d) >= 16)
+
+#if defined(VNC_FB_BITS_PER_PIX) && FB_IS_INDEXED(VNC_FB_BITS_PER_PIX)
+  #define VNC_FB_PIX_PER_BYTE (8 / VNC_FB_BITS_PER_PIX)
+  #define VNC_FB_PALETTE_SIZE (1 << VNC_FB_BITS_PER_PIX)
+#endif
 
 #ifdef VNC_FB_WIDTH
-    #define VNC_BYTES_PER_LINE (VNC_FB_WIDTH / VNC_FB_PIX_PER_BYTE)
+    #if defined(VNC_FB_BITS_PER_PIX) && FB_IS_INDEXED(VNC_FB_BITS_PER_PIX)
+        #define VNC_BYTES_PER_LINE (VNC_FB_WIDTH / VNC_FB_PIX_PER_BYTE)
+    #elif defined(VNC_FB_BITS_PER_PIX)
+        #define VNC_BYTES_PER_LINE (VNC_FB_WIDTH * VNC_FB_BITS_PER_PIX / 8)
+    #endif
 #endif
 
 #define min(A,B) ((A) < (B) ? (A) : (B))

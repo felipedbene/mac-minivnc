@@ -22,6 +22,7 @@
 #include "VNCServer.h"
 #include "VNCPalette.h"
 #include "VNCEncoder.h"
+#include "VNCFrameBuffer.h"
 
 #include "VNCTypes.h"
 
@@ -48,6 +49,97 @@ static void setTrueColor(unsigned int i, int red, int green, int blue) {
     }
 }
 
+void VNCPalette::fillScreenPixelFormat(VNCPixelFormat &format, unsigned long depth) {
+    format.bigEndian = 1;
+    if (FB_IS_TRUECOLOR(depth)) {
+        // Advertise 32-bit true color on the wire. Most VNC clients (including
+        // RealVNC Viewer) do not render 16-bit server formats; native 16-bit
+        // Mac framebuffers are expanded to 32-bit when encoding updates.
+        format.trueColor = 1;
+        format.bitsPerPixel = 32;
+        format.depth = 24;
+        format.redMax = 255;
+        format.greenMax = 255;
+        format.blueMax = 255;
+        format.redShift = 16;
+        format.greenShift = 8;
+        format.blueShift = 0;
+    } else {
+        format.trueColor = 0;
+        format.bitsPerPixel = 8;
+        format.depth = depth;
+        format.redMax = 3;
+        format.greenMax = 7;
+        format.blueMax = 3;
+        format.redShift = 5;
+        format.greenShift = 2;
+        format.blueShift = 0;
+    }
+}
+
+Boolean VNCPalette::pixelFormatsMatch(const VNCPixelFormat &a, const VNCPixelFormat &b) {
+    return a.bitsPerPixel == b.bitsPerPixel &&
+           a.depth == b.depth &&
+           a.bigEndian == b.bigEndian &&
+           a.trueColor == b.trueColor &&
+           a.redMax == b.redMax &&
+           a.greenMax == b.greenMax &&
+           a.blueMax == b.blueMax &&
+           a.redShift == b.redShift &&
+           a.greenShift == b.greenShift &&
+           a.blueShift == b.blueShift;
+}
+
+unsigned long VNCPalette::wireRowBytes(unsigned int pixels) {
+    return pixels * fbPixFormat.bitsPerPixel / 8;
+}
+
+unsigned long VNCPalette::nativeRowBytes(unsigned int pixels) {
+    #ifdef VNC_FB_BITS_PER_PIX
+        const unsigned long depth = VNC_FB_BITS_PER_PIX;
+    #else
+        const unsigned long depth = fbDepth;
+    #endif
+    return pixels * depth / 8;
+}
+
+static unsigned long expand555To888(unsigned short pix) {
+    const unsigned long r = ((pix >> 10) & 0x1F) * 255 / 31;
+    const unsigned long g = ((pix >> 5) & 0x1F) * 255 / 31;
+    const unsigned long b = (pix & 0x1F) * 255 / 31;
+    return (r << 16) | (g << 8) | b;
+}
+
+void VNCPalette::copyNativeRowToWire(const unsigned char *src, unsigned char *dst, unsigned int pixels) {
+    #ifdef VNC_FB_BITS_PER_PIX
+        const unsigned long depth = VNC_FB_BITS_PER_PIX;
+    #else
+        const unsigned long depth = fbDepth;
+    #endif
+    if (depth == 16 && fbPixFormat.bitsPerPixel == 32) {
+        const unsigned short *s = (const unsigned short*)src;
+        unsigned long *d = (unsigned long*)dst;
+        for (unsigned int i = 0; i < pixels; i++) {
+            *d++ = expand555To888(*s++);
+        }
+    } else {
+        BlockMove(src, dst, wireRowBytes(pixels));
+    }
+}
+
+void VNCPalette::copyNativeTileToWire(const unsigned char *src, unsigned char *dst, short rows, short cols) {
+    #ifdef VNC_BYTES_PER_LINE
+        const unsigned long nativeStride = VNC_BYTES_PER_LINE;
+    #else
+        const unsigned long nativeStride = fbStride;
+    #endif
+    for (short row = 0; row < rows; row++) {
+        copyNativeRowToWire(src, dst, cols);
+        src += nativeStride;
+        dst += wireRowBytes(cols);
+    }
+}
+
 void VNCPalette::checkColorTable() {
     // Find the color table associated with the device
     GDHandle gdh = GetMainDevice();
@@ -62,6 +154,26 @@ void VNCPalette::checkColorTable() {
 
 OSErr VNCPalette::updateColorTable() {
     #if !defined(VNC_FB_MONOCHROME)
+        #ifdef VNC_FB_BITS_PER_PIX
+            const unsigned long depth = VNC_FB_BITS_PER_PIX;
+        #else
+            const unsigned long depth = fbDepth;
+        #endif
+
+        // Native true color: no Mac color table to sync
+        if (FB_IS_TRUECOLOR(depth)) {
+            if (pendingPixFormat.bitsPerPixel) {
+                if (!pixelFormatsMatch(pendingPixFormat, fbPixFormat)) {
+                    BlockMove(&pendingPixFormat, &fbPixFormat, sizeof(VNCPixelFormat));
+                    bytesPerColor = fbPixFormat.bitsPerPixel / 8;
+                    prepareTrueColorRoutines(true);
+                    dprintf("Changed pixel format.\n");
+                }
+                pendingPixFormat.bitsPerPixel = 0;
+            }
+            return noErr;
+        }
+
         // Handle any changes to bits per pixel
 
         if (pendingPixFormat.bitsPerPixel) {
@@ -74,10 +186,7 @@ OSErr VNCPalette::updateColorTable() {
         // Handle any changes to the color palette
 
         if (vncFlags.fbColorMapNeedsUpdate) {
-            #ifdef VNC_FB_BITS_PER_PIX
-                const unsigned char fbDepth = VNC_FB_BITS_PER_PIX;
-            #endif
-            const unsigned int nColors = 1 << fbDepth;
+            const unsigned int nColors = 1 << depth;
 
             // Allocate the color table, if necessary
 
@@ -156,6 +265,56 @@ unsigned char *VNCPalette::emitTrueColor(unsigned char *dst, unsigned char color
     const unsigned long packed = vncTrueColors[color] << pixelShift;
     *(unsigned long *)dst = (((*(unsigned long *)dst) ^ packed) & pixelMask) ^ packed;
     return dst + bytesPerColor;
+}
+
+// Convert a native true-color tile into a stream of RFB CPIXELs (bytesPerColor
+// bytes each), for use by the TRLE/ZRLE raw-tile type. Unlike copyNativeTileToWire
+// (which emits full bitsPerPixel/8-byte RAW pixels), this emits the compressed
+// CPIXEL form using the same pack/mask/shift convention as emitTrueColor, so the
+// byte order matches the rest of the true-color encoder exactly.
+// NOTE: the final *(unsigned long*) store writes up to 4 bytes; callers must give
+// dst at least (rows*cols*bytesPerColor + 4) bytes of slack.
+void VNCPalette::copyNativeTileToCPIXEL(const unsigned char *src, unsigned char *dst, short rows, short cols) {
+    #ifdef VNC_FB_BITS_PER_PIX
+        const unsigned long depth = VNC_FB_BITS_PER_PIX;
+    #else
+        const unsigned long depth = fbDepth;
+    #endif
+    #ifdef VNC_BYTES_PER_LINE
+        const unsigned long nativeStride = VNC_BYTES_PER_LINE;
+    #else
+        const unsigned long nativeStride = fbStride;
+    #endif
+    const unsigned long cpixelRowBytes = (unsigned long)cols * bytesPerColor;
+    for (short row = 0; row < rows; row++) {
+        unsigned char *d = dst;
+        if (depth == 16) {
+            const unsigned short *s = (const unsigned short *)src;
+            if (fbPixFormat.bitsPerPixel == 32) {
+                // 16-bit screen, 32bpp/3-byte CPIXEL: expand 555 -> 888 first
+                for (short col = 0; col < cols; col++) {
+                    const unsigned long packed = expand555To888(*s++) << pixelShift;
+                    *(unsigned long *)d = (((*(unsigned long *)d) ^ packed) & pixelMask) ^ packed;
+                    d += bytesPerColor;
+                }
+            } else {
+                for (short col = 0; col < cols; col++) {
+                    const unsigned long packed = ((unsigned long)*s++) << pixelShift;
+                    *(unsigned long *)d = (((*(unsigned long *)d) ^ packed) & pixelMask) ^ packed;
+                    d += bytesPerColor;
+                }
+            }
+        } else {
+            const unsigned long *s = (const unsigned long *)src;
+            for (short col = 0; col < cols; col++) {
+                const unsigned long packed = (*s++) << pixelShift;
+                *(unsigned long *)d = (((*(unsigned long *)d) ^ packed) & pixelMask) ^ packed;
+                d += bytesPerColor;
+            }
+        }
+        src += nativeStride;
+        dst += cpixelRowBytes;
+    }
 }
 
 #pragma optimize_for_size reset

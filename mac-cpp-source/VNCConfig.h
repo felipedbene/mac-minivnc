@@ -71,6 +71,8 @@
 //#define VNC_FB_4_COLORS
 //#define VNC_FB_16_COLORS
 //#define VNC_FB_256_COLORS
+//#define VNC_FB_16BIT
+//#define VNC_FB_32BIT
 
 // Data Structure for storing preferences
 

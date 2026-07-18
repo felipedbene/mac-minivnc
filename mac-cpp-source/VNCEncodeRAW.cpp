@@ -18,11 +18,17 @@
 #include "VNCServer.h"
 #include "VNCFrameBuffer.h"
 #include "VNCEncodeRAW.h"
+#include "VNCPalette.h"
 
 int line;
 
 Size VNCEncodeRaw::minBufferSize() {
-    return 0;
+    #ifdef VNC_FB_WIDTH
+        const unsigned int width = VNC_FB_WIDTH;
+    #else
+        const unsigned int width = fbWidth;
+    #endif
+    return VNCPalette::wireRowBytes(width);
 }
 
 void VNCEncodeRaw::begin() {
@@ -31,7 +37,8 @@ void VNCEncodeRaw::begin() {
 
 Boolean VNCEncodeRaw::getChunk(EncoderPB &epb) {
     const unsigned char *src = VNCFrameBuffer::getPixelAddr(fbUpdateRect.x, fbUpdateRect.y + line);
-    BlockMove(src, epb.dst, fbUpdateRect.w);
-    epb.bytesWritten = fbUpdateRect.w;
+    const unsigned long rowBytes = VNCPalette::wireRowBytes(fbUpdateRect.w);
+    VNCPalette::copyNativeRowToWire(src, epb.dst, fbUpdateRect.w);
+    epb.bytesWritten = rowBytes;
     return ++line < fbUpdateRect.h;
 }
