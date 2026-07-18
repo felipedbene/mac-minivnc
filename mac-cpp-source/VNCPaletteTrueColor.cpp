@@ -110,20 +110,75 @@ static unsigned long expand555To888(unsigned short pix) {
     return (r << 16) | (g << 8) | b;
 }
 
+// True when the current wire format is the advertised 32-bit 888 big-endian
+// layout, i.e. identical to a native 32-bit Mac pixel. Lets the encoders take a
+// straight-copy fast path instead of per-pixel conversion.
+static Boolean wireIs888BE() {
+    return fbPixFormat.bigEndian &&
+           fbPixFormat.bitsPerPixel == 32 &&
+           fbPixFormat.redMax == 255 && fbPixFormat.greenMax == 255 && fbPixFormat.blueMax == 255 &&
+           fbPixFormat.redShift == 16 && fbPixFormat.greenShift == 8 && fbPixFormat.blueShift == 0;
+}
+
+// Pack 8-bit R/G/B into a wire pixel value (host-order, right-justified) using
+// the client's requested max/shift fields — the same layout setTrueColor builds.
+static unsigned long packWire(unsigned long r, unsigned long g, unsigned long b) {
+    const unsigned long wr = r * fbPixFormat.redMax   / 255;
+    const unsigned long wg = g * fbPixFormat.greenMax / 255;
+    const unsigned long wb = b * fbPixFormat.blueMax  / 255;
+    return (wr << fbPixFormat.redShift) | (wg << fbPixFormat.greenShift) | (wb << fbPixFormat.blueShift);
+}
+
+// Emit a wire pixel as nb bytes in the client's byte order. For big-endian the
+// low nb bytes are written MSB-first, which also drops the padding byte of a
+// 3-byte CPIXEL taken from a 32-bit value.
+static unsigned char *emitWire(unsigned char *dst, unsigned long color, unsigned int nb) {
+    if (fbPixFormat.bigEndian) {
+        for (int k = (int)nb - 1; k >= 0; k--) *dst++ = (unsigned char)((color >> (k * 8)) & 0xFF);
+    } else {
+        for (unsigned int k = 0; k < nb; k++)  *dst++ = (unsigned char)((color >> (k * 8)) & 0xFF);
+    }
+    return dst;
+}
+
 void VNCPalette::copyNativeRowToWire(const unsigned char *src, unsigned char *dst, unsigned int pixels) {
     #ifdef VNC_FB_BITS_PER_PIX
         const unsigned long depth = VNC_FB_BITS_PER_PIX;
     #else
         const unsigned long depth = fbDepth;
     #endif
-    if (depth == 16 && fbPixFormat.bitsPerPixel == 32) {
+    // Fast paths for the advertised 32-bit 888 big-endian wire format, where a
+    // native pixel needs no reformatting (32-bit) or only a 555->888 expand.
+    if (wireIs888BE()) {
+        if (depth == 16) {
+            const unsigned short *s = (const unsigned short*)src;
+            unsigned long *d = (unsigned long*)dst;
+            for (unsigned int i = 0; i < pixels; i++) {
+                *d++ = expand555To888(*s++);
+            }
+            return;
+        }
+        BlockMove(src, dst, wireRowBytes(pixels));
+        return;
+    }
+    // General path: honor whatever true-color format the client requested via
+    // SetPixelFormat by converting each native pixel into it.
+    const unsigned int nb = fbPixFormat.bitsPerPixel / 8;
+    if (depth == 16) {
         const unsigned short *s = (const unsigned short*)src;
-        unsigned long *d = (unsigned long*)dst;
         for (unsigned int i = 0; i < pixels; i++) {
-            *d++ = expand555To888(*s++);
+            const unsigned short p = *s++;
+            const unsigned long r = (((p >> 10) & 0x1F) * 255) / 31;
+            const unsigned long g = (((p >>  5) & 0x1F) * 255) / 31;
+            const unsigned long b = ((  p        & 0x1F) * 255) / 31;
+            dst = emitWire(dst, packWire(r, g, b), nb);
         }
     } else {
-        BlockMove(src, dst, wireRowBytes(pixels));
+        const unsigned long *s = (const unsigned long*)src;
+        for (unsigned int i = 0; i < pixels; i++) {
+            const unsigned long p = *s++;
+            dst = emitWire(dst, packWire((p >> 16) & 0xFF, (p >> 8) & 0xFF, p & 0xFF), nb);
+        }
     }
 }
 
@@ -286,30 +341,44 @@ void VNCPalette::copyNativeTileToCPIXEL(const unsigned char *src, unsigned char 
         const unsigned long nativeStride = fbStride;
     #endif
     const unsigned long cpixelRowBytes = (unsigned long)cols * bytesPerColor;
+    const Boolean fast = wireIs888BE();
     for (short row = 0; row < rows; row++) {
         unsigned char *d = dst;
-        if (depth == 16) {
-            const unsigned short *s = (const unsigned short *)src;
-            if (fbPixFormat.bitsPerPixel == 32) {
-                // 16-bit screen, 32bpp/3-byte CPIXEL: expand 555 -> 888 first
+        if (fast) {
+            // Fast path: the CPIXEL is the low bytesPerColor bytes of the native
+            // 888 pixel, written via a masked long-store (needs buffer slack).
+            if (depth == 16) {
+                const unsigned short *s = (const unsigned short *)src;
                 for (short col = 0; col < cols; col++) {
                     const unsigned long packed = expand555To888(*s++) << pixelShift;
                     *(unsigned long *)d = (((*(unsigned long *)d) ^ packed) & pixelMask) ^ packed;
                     d += bytesPerColor;
                 }
             } else {
+                const unsigned long *s = (const unsigned long *)src;
                 for (short col = 0; col < cols; col++) {
-                    const unsigned long packed = ((unsigned long)*s++) << pixelShift;
+                    const unsigned long packed = (*s++) << pixelShift;
                     *(unsigned long *)d = (((*(unsigned long *)d) ^ packed) & pixelMask) ^ packed;
                     d += bytesPerColor;
                 }
             }
         } else {
-            const unsigned long *s = (const unsigned long *)src;
-            for (short col = 0; col < cols; col++) {
-                const unsigned long packed = (*s++) << pixelShift;
-                *(unsigned long *)d = (((*(unsigned long *)d) ^ packed) & pixelMask) ^ packed;
-                d += bytesPerColor;
+            // General: convert each native pixel into the client's CPIXEL format.
+            if (depth == 16) {
+                const unsigned short *s = (const unsigned short *)src;
+                for (short col = 0; col < cols; col++) {
+                    const unsigned short p = *s++;
+                    const unsigned long r = (((p >> 10) & 0x1F) * 255) / 31;
+                    const unsigned long g = (((p >>  5) & 0x1F) * 255) / 31;
+                    const unsigned long b = ((  p        & 0x1F) * 255) / 31;
+                    d = emitWire(d, packWire(r, g, b), bytesPerColor);
+                }
+            } else {
+                const unsigned long *s = (const unsigned long *)src;
+                for (short col = 0; col < cols; col++) {
+                    const unsigned long p = *s++;
+                    d = emitWire(d, packWire((p >> 16) & 0xFF, (p >> 8) & 0xFF, p & 0xFF), bytesPerColor);
+                }
             }
         }
         src += nativeStride;

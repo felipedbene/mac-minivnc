@@ -835,10 +835,20 @@ void vncSetPixelFormat(const VNCSetPixFormat &pixFormat) {
         format.redShift, format.greenShift, format.blueShift
     );
     if (FB_IS_TRUECOLOR(depth)) {
-        // Clients often send an 8-bit indexed SetPixelFormat even after the
-        // server advertised true color; accepting it would set VNC_ERROR and
-        // stall all further messages (black screen). The handshake format wins.
-        dprintf("Ignoring client SetPixelFormat on native true-color screen.\n");
+        if (format.trueColor) {
+            // Honor any true-color format the client asks for (8/16/32-bit, any
+            // shifts/endianness). The encoders convert native pixels into it; the
+            // change is applied on the next fbSyncTasks() tick. This is required:
+            // ignoring a reduced-bpp request keeps sending wider pixels and
+            // desyncs the stream ("bad rectangle" on the client).
+            VNCPalette::setPixelFormat(format);
+        } else {
+            // Indexed/colormap output from a native true-color screen is not yet
+            // supported. Fail cleanly rather than desync by continuing to send
+            // true-color pixels the client will read as indices.
+            dprintf("Client requested indexed format on true-color screen; unsupported.\n");
+            vncState = VNC_ERROR;
+        }
         return;
     }
     if (format.trueColor) {
@@ -1061,6 +1071,19 @@ pascal void vncPrepareForFBUpdate() {
     if((fbUpdateRect.x + fbUpdateRect.w) > fbWidth) {
         fbUpdateRect.x = fbWidth - fbUpdateRect.w;
     }
+
+    #ifndef VNC_FB_WIDTH
+        // Per-frame diagnostic: dirty-rect geometry + screen stride vs. the
+        // negotiated wire pixel format and bytes-per-row. Invaluable for pixel
+        // format / stride / subrect desyncs. Emitted through dprintf, so it is a
+        // no-op unless the "MiniVNC Telemetry" marker file has armed logging.
+        dprintf("FBUpd rect=%d,%d %dx%d | fbW=%d stride=%d depth=%d | wire bpp=%d d=%d be=%d sh=%d/%d/%d rowB=%ld\n",
+            fbUpdateRect.x, fbUpdateRect.y, fbUpdateRect.w, fbUpdateRect.h,
+            fbWidth, fbStride, (int)fbDepth,
+            fbPixFormat.bitsPerPixel, fbPixFormat.depth, fbPixFormat.bigEndian,
+            fbPixFormat.redShift, fbPixFormat.greenShift, fbPixFormat.blueShift,
+            VNCPalette::wireRowBytes(fbUpdateRect.w));
+    #endif
 
     // If a new color palette is available, let the main
     // thread handle it before continuing with the update.

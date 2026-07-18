@@ -22,6 +22,12 @@
 
 int line;
 
+// Shared with VNCEncoder::isNewSubrect()/getSubrect(). Raw iterates rows via
+// `line` rather than the tile cursor, so we advance tile_y in step to keep
+// isNewSubrect() true only for the first row — otherwise the rect header is
+// re-emitted before every row, drifting the image and desyncing the client.
+extern int tile_x, tile_y;
+
 Size VNCEncodeRaw::minBufferSize() {
     #ifdef VNC_FB_WIDTH
         const unsigned int width = VNC_FB_WIDTH;
@@ -40,5 +46,7 @@ Boolean VNCEncodeRaw::getChunk(EncoderPB &epb) {
     const unsigned long rowBytes = VNCPalette::wireRowBytes(fbUpdateRect.w);
     VNCPalette::copyNativeRowToWire(src, epb.dst, fbUpdateRect.w);
     epb.bytesWritten = rowBytes;
-    return ++line < fbUpdateRect.h;
+    ++line;
+    tile_y = line;  // mark progress so the rect header is emitted only once
+    return line < fbUpdateRect.h;
 }

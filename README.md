@@ -6,6 +6,11 @@
 >
 > MiniVNC is by Marcio Teixeira (GPL-3.0); everything below is the upstream README.
 
+### Fork additions
+
+- **16/32-bit true color.** True-color (Thousands/Millions of colors) screens are supported for RealVNC and other modern clients. The server honors the client's requested pixel format via `SetPixelFormat` (any true-color bpp/endianness/shifts), converting native Mac framebuffer pixels into it. Use the **Raw** encoding for true-color sessions; true-color **ZRLE** is still experimental.
+- **Diagnostic logging is telemetry-gated.** When the **`MiniVNC Telemetry`** marker file is present next to the app (see [Telemetry](docs/TELEMETRY.md)), MiniVNC emits verbose per-frame diagnostics to the UDP log sink — including a `FBUpd` line per update showing the dirty-rect geometry, screen stride/depth, and the negotiated wire pixel format (bpp, endianness, RGB shifts, bytes-per-row). This is the fastest way to diagnose pixel-format, stride, or subrect desyncs. Without the marker file the logging is a compiled-in no-op, so it costs nothing in normal use.
+
 ---
 
 ![MiniVNC for Macintosh][minivnc-main] ![MiniVNC for Macintosh][minivnc-options]
